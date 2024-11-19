@@ -1,0 +1,54 @@
+project:
+  type: book
+book:
+  title: 'Single-cell downstream analysis'
+  author:
+  - name: Adam-Nicolas Pelletier, PhD
+    affiliations:
+    - name: RPM Bioinfo Solutions
+    email: adam.nicolas.pelletier@rpmbioinfo-solutions.com
+  date: today
+  chapters:
+  - index.qmd
+  - QC.qmd
+  - dimension_reduction.qmd
+  - integrate_datasets.qmd
+  - integrate_modalities.qmd
+  - clustering.qmd
+  - cell_annotation.qmd
+  - tf_activity.qmd
+  - cellchat.qmd
+
+  
+  sidebar:
+    logo: logo.jpg
+
+format:
+  html:
+    theme: materia
+    embed-resources: false
+    code-fold: true
+    standalone: true
+    grid: 
+      body-width: 1300px
+      margin-width: 150px
+      sidebar-width: 250px
+    include-in-header:
+      - text: |
+         <link rel = "shortcut icon" href = "favicon-32x32.png" />
+  pdf: 
+    header-includes: |
+      \titlehead{\includegraphics[width=6in]{rpm_en_logo_lowres.jpg}}
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    documentclass: scrreprt
+    prefer-html: false
+    keep-md: false
+    fig-pos: "H"
+    margin-left: 10mm
+    margin-right: 10mm
+editor: visual
+execute: 
+  freeze: true
+  cache: true

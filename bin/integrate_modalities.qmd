@@ -1,0 +1,171 @@
+---
+params:
+  seurat: "../results/seurat/seurat_after_qc.RDS"
+  pipeline: "multiome"
+  umap2_ndims: 30
+  first_lsi_pc: 2
+  integrate_datasets: true
+  
+---
+
+## Multimodal integration
+
+```{r setup, warning=F, message=F, echo=knitr::is_html_output(), eval=T}
+
+selected_packages <- c("Seurat",
+                       "Signac",
+                       'tidyverse',
+                       'readxl',
+                       'patchwork',
+                       'clustree')
+#invisible(extrafont::font_import(prompt = F))
+selected_font <- "Arial"
+selected_font_pdf <- "ArialMT"
+#extrafont::loadfonts(device = "win")
+invisible(lapply(selected_packages, library, character.only = TRUE))
+
+if(knitr::is_html_output()){
+  eval_set <- TRUE
+  eval_pdf <- FALSE
+  echo_set <- TRUE
+  message_set <- FALSE
+} else {
+  eval_set <- FALSE
+  eval_pdf <- TRUE
+  echo_set <- FALSE
+  message_set <- FALSE
+}
+
+source("run_funcs.R")
+
+
+knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width = 10, cache.lazy = F)
+
+```
+
+```{r echo=F}
+
+run_gex <- FALSE
+run_atac <- FALSE
+run_adt <- FALSE
+
+multimodal <- FALSE
+
+if(params$pipeline %in% c("cite", 'cite_crispr', 'multiome', 'teaseq')){
+  multimodal <- TRUE
+}
+
+if(params$pipeline != "atac"){
+  run_gex <- TRUE
+}
+
+if(params$pipeline %in% c("atac", 'multiome', 'teaseq')){
+  run_atac <- TRUE
+}
+
+if(params$pipeline %in% c("cite", 'cite_crispr', 'teaseq')){
+  run_adt <- TRUE
+}
+
+```
+
+### Analysis Parameters
+```{r echo=FALSE}
+
+df <- params_to_df(params)
+df
+```
+
+### Load Data
+```{r }
+seurat <- readRDS(params$seurat)
+
+```
+
+
+```{r echo=F}
+wnn_blurb <- "### Multimodal Integration\nSeurat objects with multiple modalities, such as RNA, ATAC or ADT, can be combined into a single dimension reduction with weighted Nearest Neighbour (wNN) dimension reduction."
+
+```
+
+`r if(multimodal){wnn_blurb}`
+```{r eval=params$pipeline == "multiome", echo=params$pipeline == "multiome" & echo_set}
+
+
+DefaultAssay(seurat) <- 'RNA'
+if(params$integrate_datasets){
+  seurat <- FindMultiModalNeighbors(seurat, 
+                                  reduction.list = list("integrated.rna", "integrated_lsi"), 
+                                  dims.list = list(1:params$umap2_ndims, params$first_lsi_pc:30))
+} else {
+   seurat <- FindMultiModalNeighbors(seurat, 
+                                  reduction.list = list("pca", "lsi"), 
+                                  dims.list = list(1:params$umap2_ndims, params$first_lsi_pc:30))
+}
+
+
+seurat <- RunUMAP(seurat, 
+                  nn.name = "weighted.nn", 
+                  reduction.name = "wnn.umap", 
+                  reduction.key = "wnnUMAP_")
+
+```
+
+```{r eval=params$pipeline == "teaseq", echo=params$pipeline == "teaseq" & echo_set}
+
+
+DefaultAssay(seurat) <- 'RNA'
+if(params$integrate_datasets){
+  seurat <- FindMultiModalNeighbors(seurat, 
+                                  reduction.list = list("integrated.rna", "integrated_lsi", "integrated.adt"), 
+                                  dims.list = list(1:params$umap2_ndims, params$first_lsi_pc:30, 1:20))
+} else {
+   seurat <- FindMultiModalNeighbors(seurat, 
+                                  reduction.list = list("pca", "lsi", 'apca'), 
+                                  dims.list = list(1:params$umap2_ndims, params$first_lsi_pc:30, 1:20))
+}
+
+
+seurat <- RunUMAP(seurat, 
+                  nn.name = "weighted.nn", 
+                  reduction.name = "wnn.umap", 
+                  reduction.key = "wnnUMAP_")
+
+
+
+```
+
+```{r eval=params$pipeline %in% c("cite", 'cite_crispr'), echo=params$pipeline %in% c("cite", 'cite_crispr') & echo_set}
+
+
+DefaultAssay(seurat) <- 'RNA'
+if(params$integrate_datasets){
+  seurat <- FindMultiModalNeighbors(seurat, 
+                                  reduction.list = list("integrated.rna", "integrated.adt"), 
+                                  dims.list = list(1:params$umap2_ndims, 1:20))
+} else {
+   seurat <- FindMultiModalNeighbors(seurat, 
+                                  reduction.list = list("pca", 'apca'), 
+                                  dims.list = list(1:params$umap2_ndims, 1:20))
+}
+
+
+seurat <- RunUMAP(seurat, 
+                  nn.name = "weighted.nn", 
+                  reduction.name = "wnn.umap", 
+                  reduction.key = "wnnUMAP_")
+
+
+
+```
+
+```{r eval=multimodal, echo=multimodal & echo_set}
+DimPlot(seurat, group.by = "SampleID", reduction = 'wnn.umap', raster = T ) + ggtitle("wNN Integration")
+
+```
+
+
+```{r }
+saveRDS(seurat, file = "seurat_integrated_wnn.RDS")
+
+```

@@ -1,0 +1,77 @@
+---
+title: "get_ensdb_annotation"
+output: html_document
+date: "2024-07-29"
+params:
+  AH_ID: "AH109606"
+  genome: "GRCh38"
+  species: "Macaca mulatta"
+  genbank: "GCF_003339765.1"
+---
+
+```{r setup, include=FALSE}
+
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library('BSgenomeForge'))
+
+
+options(timeout=1000)
+
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, fig.align = "center")
+```
+
+
+## Annotations
+### AnnotationHub
+```{r eval=T }
+
+suppressPackageStartupMessages(library(AnnotationHub))
+suppressPackageStartupMessages(library(GenomeInfoDb))
+suppressPackageStartupMessages(library(Signac))
+ah <- AnnotationHub()
+gtf <-  ah[[params$AH_ID]]
+
+#3 to search for new EnsDb for new species, run query(ah, c("SPECIES NAME", "EnsDb"))
+
+
+annotations <- GetGRangesFromEnsDb(ensdb = gtf)
+seqlevelsStyle(annotations) <- 'NCBI'
+genome(annotations) <- params$genome
+
+for(i in 1:length(seqlevels(annotations))){
+  annot <- seqlevels(annotations)[i]
+
+  if( !is.na(as.numeric(annot))){
+    seqlevels(annotations)[i] <- paste0("chr", annot)
+  } else if (annot %in% c("X", "Y")){
+    seqlevels(annotations)[i] <- paste0("chr", annot)
+  }
+}
+saveRDS(annotations, "signac_annotation.RDS")
+
+
+
+
+```
+
+### BSGenome
+Instructions on how to forge a new BSgenome
+```{r eval = F}
+
+tmp_gidb <- GenomeInfoDb::registered_NCBI_assemblies()
+circ_seqs <- tmp_gidb[tmp_gidb$assembly_accession == params$genbank,]$circ_seqs[[1]]
+
+forgeBSgenomeDataPkgFromNCBI(assembly_accession = params$genbank, 
+                            organism = params$species,
+                             pkg_maintainer = "Adam-Nicolas Pelletier, <adam.nicolas.pelletier@rpmbioinfo-solutions.com>", 
+                             circ_seqs = circ_seqs)
+bs_dir <- list.dirs(".", recursive = F)
+bs_dir <- bs_dir[grepl(".*BSgenome.*", bs_dir)]
+
+
+devtools::build(bs_dir)
+
+devtools::check_built(bs_dir)
+
+```

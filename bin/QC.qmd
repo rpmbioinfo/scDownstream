@@ -1,0 +1,485 @@
+---
+params:
+  eval: true
+  pipeline: "multiome"
+  metadata: "file"
+  genome: "GRCh38"
+  mito_regex: "MT-"
+  ribo_regex: "RP[SL]"
+  percent_mt: 15
+  percent_ribo: 0
+  nCount_RNA_min: 1000
+  nCount_RNA_max: 25000
+  nFeature_RNA_min: 500
+  nFeature_RNA_max: 2500
+  nCount_ATAC_min: 1000
+  nCount_ATAC_max: 0
+  nucleosome_signal_min: 0
+  nucleosome_signal_max: 4
+  TSS_enrichment: 2
+  atac_peak_region_fragments_min: 1000
+  atac_peak_region_fragments_max: 50000
+  pct_reads_in_peaks_min: 20
+  blacklist_fraction: 0.05
+  sample_exclusion: ""
+  umap1_ndims: 30
+  clustering1_res: 0.8
+  doublet_removal: true
+  doublet_confidence: "all"
+---
+
+
+# Quality Control
+```{r setup, warning=F, message=F, echo=knitr::is_html_output(), eval=T}
+
+selected_packages <- c("Seurat",
+                       "Signac",
+                       "biovizBase",
+                       'tidyverse',
+                       'DoubletFinder',
+                       'readxl')
+#invisible(extrafont::font_import(prompt = F))
+selected_font <- "Arial"
+selected_font_pdf <- "ArialMT"
+#extrafont::loadfonts(device = "win")
+invisible(lapply(selected_packages, library, character.only = TRUE))
+
+
+if(knitr::is_html_output()){
+  eval_set <- TRUE
+  eval_pdf <- FALSE
+  echo_set <- TRUE
+  message_set <- FALSE
+} else {
+  eval_set <- FALSE
+  eval_pdf <- TRUE
+  echo_set <- FALSE
+  message_set <- FALSE
+}
+
+source("run_funcs.R")
+
+plotLS <- list()
+
+
+knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width=9)
+
+```
+
+```{r echo=F}
+
+run_gex <- FALSE
+run_atac <- FALSE
+run_adt <- FALSE
+
+if(params$pipeline != "atac"){
+  run_gex <- TRUE
+}
+
+if(params$pipeline %in% c("atac", 'multiome', 'teaseq')){
+  run_atac <- TRUE
+}
+
+if(params$pipeline %in% c("cite", 'cite_crispr', 'teaseq')){
+  run_adt <- TRUE
+}
+
+```
+
+## Analysis Parameters
+```{r echo=FALSE}
+
+df <- params_to_df(params)
+
+df
+```
+
+## Load Data
+
+```{r sample_LS}
+sample_LS <- list.files(pattern = "*_counts_seurat.RDS")
+#sample_LS <- list.files(path = "../results/seurat", pattern = "filtered.*_counts_seurat.RDS", full.names = T)
+
+
+seurat_ls <- lapply(sample_LS, function(x){
+  tmp <- readRDS(x)
+  
+})
+
+seurat <- merge(seurat_ls[[1]], y = seurat_ls[-1])
+rm(seurat_ls)
+
+seurat <- JoinLayers(seurat)
+
+#params <- read(path = "../results/params.json")
+
+
+```
+
+
+## Load Sample Metadata
+```{r }
+ext <- tools::file_ext(params$metadata)
+
+if(ext %in% c("xls", "xlsx")){
+  meta_df <- readxl::read_excel(params$metadata)
+} else if(ext == "csv"){
+  meta_df <- readr::read_csv(params$metadata)
+} else if(ext == "tsv"){
+  meta_df <- readr::read_tsv(params$metadata)
+} else {
+  stop("Metadata is not in a valid format. Provide a CSV, TSV or Excel file for metadata")
+}
+
+knitr::kable(meta_df)
+
+if("SampleID" %in% colnames(meta_df)){
+  if(length(setdiff(unique(seurat$SampleID), meta_df$SampleID)) == 0){
+      tmp_meta <- seurat@meta.data %>%
+              rownames_to_column("cell") %>%
+              dplyr::select(cell, SampleID) %>%
+              left_join(meta_df, by = "SampleID") %>%
+              column_to_rownames("cell")
+    seurat <- AddMetaData(seurat, metadata = tmp_meta)
+  } else {
+    stop("Metadata does not contain rows for all SampleIDs found in the Seurat object.")
+  }
+
+} else {
+  stop("Metadata does not contain a 'SampleID' column to merge with the Seurat object")
+}
+```
+
+`r if (run_gex) {"## Gene Expression metrics"}`
+```{r gex_qc, eval=run_gex, echo=run_gex & echo_set, message=FALSE}
+
+
+
+DefaultAssay(seurat) <- "RNA"
+
+seurat[["percent.mt"]] <- PercentageFeatureSet(seurat, pattern = paste0("^",params$mito_regex))
+seurat[["percent.ribo"]] <- PercentageFeatureSet(seurat, pattern = paste0("^", params$ribo_regex))
+
+log_qc <- c("nCount_RNA", "nFeature_RNA")
+lin_qc <- c("percent.mt", "percent.ribo")
+
+
+qc_metric_plots <- sapply(c(log_qc, lin_qc), simplify = F, USE.NAMES = T, function(x){
+  if(x %in% log_qc){
+    p <- VlnPlot(seurat, features = x, ncol = 1,
+          log = T, pt.size = 0, group.by = "SampleID" ) + NoLegend()
+  } else {
+    p <- VlnPlot(seurat, features = x, ncol = 1,
+          log = F, pt.size = 0, group.by = "SampleID" ) + NoLegend()
+  }
+    
+  
+})
+
+
+
+
+qc_thresholds <- list("nCount_RNA" = list("upper" = params$nCount_RNA_max, 'lower' = params$nCount_RNA_min),
+                      "nFeature_RNA" = list("upper" = params$nFeature_RNA_max, "lower" = params$nFeature_RNA_min),
+                      "percent.mt" = list("upper" = params$percent_mt))
+
+qc_titles <-     list("nCount_RNA" = "Number of reads per cell",
+                      "nFeature_RNA" = "Number of genes quantified per cell",
+                      "percent.mt" = "% of mitochondrial reads")
+
+
+
+
+for(i in names(qc_thresholds)){
+  for(j in names(qc_thresholds[[i]])){
+    if(j == "upper"){
+      lincol <- "darkgreen"
+      
+    } else {
+      lincol <- "red"
+    }
+    if(qc_thresholds[[i]][[j]] > 0){
+      qc_metric_plots[[i]] <- qc_metric_plots[[i]] + geom_hline(yintercept = qc_thresholds[[i]][[j]], lty = 2, color = lincol) 
+    }
+  }
+  qc_metric_plots[[i]] <- qc_metric_plots[[i]] + ggtitle(qc_titles[[i]])
+}
+
+
+
+
+qc_metric_plots$nCount_RNA
+qc_metric_plots$nFeature_RNA
+qc_metric_plots$percent.mt
+
+
+```
+
+
+`r if(run_atac){"## Chromatin Accessbility metrics"}`
+
+```{r eval=run_atac, echo=run_atac & echo_set}
+
+
+fragLS <- list.files(pattern = "*_sample_fragments.tsv.gz$")
+names(fragLS) <- gsub("_sample_fragments.tsv.*", "", basename(fragLS)) 
+
+
+DefaultAssay(seurat) <- "ATAC"
+
+
+seurat$pct_reads_in_peaks <- seurat$atac_peak_region_fragments / seurat$atac_fragments * 100
+if(params$genome == "GRCh38"){
+  seurat$blacklist_fraction <- FractionCountsInRegion(object = seurat, assay = "ATAC",regions = blacklist_hg38)
+} else if(params$genome == "GRCm38"){
+  seurat$blacklist_fraction <- FractionCountsInRegion(object = seurat, assay = "ATAC",regions = blacklist_mm10)
+}
+
+
+log_qc <- c("nCount_ATAC", "atac_peak_region_fragments", 'FRiP')
+lin_qc <- c("nucleosome_signal", "TSS.enrichment", "pct_reads_in_peaks")
+if("blacklist_fraction" %in% colnames(seurat@meta.data)){
+  lin_qc <- c(lin_qc, "blacklist_fraction")
+}
+
+
+
+qc_metric_plots_atac <- sapply(c(log_qc, lin_qc), simplify = F, USE.NAMES = T, function(x){
+  if(x %in% log_qc){
+    p <- VlnPlot(seurat, features = x, ncol = 1,
+          log = T, pt.size = 0, group.by = "SampleID" ) + NoLegend()
+  } else {
+    p <- VlnPlot(seurat, features = x, ncol = 1,
+          log = F, pt.size = 0, group.by = "SampleID" ) + NoLegend()
+  }
+    
+  
+})
+
+qc_metric_plots <- c(qc_metric_plots, qc_metric_plots_atac)
+
+
+qc_thresholds_atac <- list("nCount_ATAC" = list("upper" = params$nCount_ATAC_max, 'lower' = params$nCount_ATAC_min),
+                      "nucleosome_signal" = list("upper" = params$nucleosome_signal_max, "lower" = params$nucleosome_signal_min),
+                      "TSS.enrichment"  = list("lower" = params$TSS_enrichment),
+                      "atac_peak_region_fragments" = list("upper" = params$atac_peak_region_fragments_max, "lower" = params$atac_peak_region_fragments_min),
+                      'pct_reads_in_peaks' = list('lower' = params$pct_reads_in_peaks_min ))
+
+
+qc_titles <-     list("nCount_ATAC" = "Number of ATAC reads",
+                      "nucleosome_signal" = "Strength of nucleosome signal per cell. Ratio of mononucleosome/nucleosome free fragments",
+                      "TSS.enrichment" = "Signal to noise enrichment of reads ± 2000bp around TSS",
+                      "atac_peak_region_fragments" = "Number of ATAC fragments found in open chromatin peaks (regions)",
+                      "pct_reads_in_peaks" = "% of fragments found in peaks (regions)",
+                      "blacklist_fraction" = "% of fragments in blacklisted genomic regions (as defined by ENCODE)")
+
+if("blacklist_fraction" %in% colnames(seurat@meta.data)){
+  qc_thresholds_atac <- c(qc_thresholds_atac, list("blacklist_fraction"  = list("upper" = params$blacklist_fraction)))
+}
+
+
+for(i in names(qc_thresholds_atac)){
+  for(j in names(qc_thresholds_atac[[i]])){
+    if(j == "upper"){
+      lincol <- "darkgreen"
+      
+    } else {
+      lincol <- "red"
+    }
+    qc_metric_plots[[i]] <- qc_metric_plots[[i]] + geom_hline(yintercept = qc_thresholds_atac[[i]][[j]], lty = 2, color = lincol) 
+  }
+  qc_metric_plots[[i]] <- qc_metric_plots[[i]] + ggtitle(qc_titles[[i]])
+}
+
+
+qc_thresholds <- c(qc_thresholds, qc_thresholds_atac)
+
+qc_metric_plots$nCount_ATAC
+
+qc_metric_plots$atac_peak_region_fragments
+
+qc_metric_plots$pct_reads_in_peaks
+
+qc_metric_plots$TSS.enrichment
+
+qc_metric_plots$nucleosome_signal
+
+if("blacklist_fraction" %in% colnames(seurat@meta.data)){
+  qc_metric_plots$blacklist_fraction
+}
+
+qc_metric_plots
+```
+
+## Filter bad cells and suboptimal samples
+```{r }
+upper_bounds <- list()
+lower_bounds <- list()
+
+
+for(j in names(qc_thresholds)){
+
+   for(k in names(qc_thresholds[[j]])){
+     if(k == "upper"){
+       if(qc_thresholds[[j]][[k]] != 0){
+         tmp <- list(qc_thresholds[[j]][[k]])
+         names(tmp) <- j
+         upper_bounds <- c(upper_bounds, tmp)
+       }
+       
+     } else if(k == "lower"){
+       if(qc_thresholds[[j]][[k]] != 0){
+         tmp <- list(qc_thresholds[[j]][[k]])
+         names(tmp) <- j
+         lower_bounds <- c(lower_bounds, tmp)
+       }
+       
+     }
+   }
+
+}
+
+
+for(i in names(upper_bounds)){
+  expr <- FetchData(seurat, vars = i)
+  seurat <- seurat[,which(expr < upper_bounds[[i]])]
+}
+
+for(i in names(lower_bounds)){
+  expr <- FetchData(seurat, vars = i)
+  seurat <- seurat[,which(expr > lower_bounds[[i]])]
+}
+
+sample_exclusion <- unlist(params$sample_exclusion)
+sample_exclusion_logical <- !is.null(sample_exclusion)
+
+```
+
+```{r sample_exclusion, eval=sample_exclusion_logical, echo=sample_exclusion_logical & echo_set, message=FALSE}
+
+
+seurat <- seurat[, !(seurat$SampleID %in% sample_exclusion)]
+
+
+```
+
+
+`r if (params$doublet_removal & params$pipeline != "atac") {"## Doublet Removal\nUsing Doublet Finder to find doublets on a per sample basis"}`
+
+```{r doublet_removal, eval=params$doublet_removal & params$pipeline != "atac", echo=params$doublet_removal & params$pipeline != "atac"  & echo_set, results='hide', fig.show = 'hide'1}
+DefaultAssay(seurat) <- "RNA"
+seurat <- FindVariableFeatures(seurat, verbose = F)
+seurat <- NormalizeData(seurat, verbose = F)
+seurat <- ScaleData(seurat, verbose = F)
+seurat <- RunPCA(seurat, verbose = F, npcs = params$umap1_ndims)
+
+seurat <- RunUMAP(seurat, dims = 1:params$umap1_ndims, verbose = F)
+seurat <- FindNeighbors(seurat, dims = 1:params$umap1_ndims, verbose = F)
+seurat <- FindClusters(seurat, resolution = params$clustering1_res, verbose = F)
+
+
+doubl_find <- function(seurat, ndims){
+  split_seurat <- SplitObject(seurat, split.by = "SampleID")
+  doublet_LS <- list()
+  for(i in names(split_seurat)){
+
+    tmp_seurat <- split_seurat[[i]]
+    sweep.res <- paramSweep(tmp_seurat, PCs = 1:ndims, sct = F) 
+    sweep.stats <- summarizeSweep(sweep.res, GT = FALSE) 
+    bcmvn <- find.pK(sweep.stats) 
+    homotypic.prop <- modelHomotypic(tmp_seurat@meta.data$seurat_clusters) 
+    nExp <- round(ncol(tmp_seurat) * homotypic.prop)  
+    nExp.adj <- round(nExp*(1-homotypic.prop))
+    tmp_seurat <- doubletFinder(tmp_seurat, PCs = 1:ndims, pN = 0.25, pK = 0.09, nExp = nExp, 
+                                   reuse.pANN = FALSE, sct = FALSE)
+    tmp_seurat <- doubletFinder(tmp_seurat, PCs = 1:ndims, pN = 0.25, pK = 0.09, nExp = nExp.adj, 
+                               reuse.pANN = paste("pANN_0.25_0.09_", nExp, sep =""), sct = FALSE)
+    pANN_select <- paste("pANN_0.25_0.09_", nExp, sep ="")
+    df_high <- paste("DF.classifications_0.25_0.09_", nExp.adj,sep ="")
+    df_low <- paste("DF.classifications_0.25_0.09_", nExp, sep ="")
+    doublet_LS[[i]] <- tmp_seurat@meta.data %>%
+                rownames_to_column("cell") %>%
+                dplyr::rename(doublet_classification_low_confidence = df_low,
+                              doublet_classification_high_confidence = df_high) %>%
+                dplyr::select(cell, doublet_classification_low_confidence, doublet_classification_high_confidence ) %>%
+                mutate(doubletFinder_classification = doublet_classification_low_confidence) %>%
+                mutate(doubletFinder_classification = ifelse(doublet_classification_high_confidence == "Doublet",
+                                                   "Doublet - High Confidence", 
+                                                   ifelse(doublet_classification_high_confidence == "Singlet"
+                                                          & doublet_classification_low_confidence == "Doublet",
+                                                          "Doublet - Low Confidence",
+                                                          doubletFinder_classification))) %>% 
+                                                  column_to_rownames("cell")
+  
+  }
+  doublet_df_all <- bind_rows(doublet_LS)[colnames(seurat),]
+
+  seurat$doublet_classification_low_confidence <- NULL
+  seurat$doublet_classification_high_confidence <- NULL
+  seurat$doubletFinder_classification <- NULL
+  seurat <- AddMetaData(seurat, metadata = doublet_df_all)
+  
+  return(seurat)
+
+}
+
+seurat <- doubl_find(seurat, ndims = params$umap1_ndims)
+```
+
+```{r doublet_removal_plot, eval=params$doublet_removal & params$pipeline != "atac", echo=params$doublet_removal & params$pipeline != "atac"  & echo_set}
+
+DimPlot(seurat, group.by = "doubletFinder_classification", raster = T)
+
+if(params$doublet_confidence == "all"){
+  seurat <- subset(seurat, subset = doubletFinder_classification == "Singlet")
+} else if( params$doublet_confidence == "High"){
+  seurat <- subset(seurat, subset = doubletFinder_classification %in% c("Singlet", 'Doublet - Low Confidence'))
+}
+
+
+
+```
+
+
+```{r echo=F}
+peak_call_blurb <- "## Peak Calling\nNow that we have isolated good viable cells, we need to rerun peak calling to isolate true peaks that are not derived from noise."
+
+
+```
+
+`r if(run_atac){peak_call_blurb}`
+
+```{r call_peaks, eval=run_atac, echo=run_atac & echo_set}
+DefaultAssay(seurat) <- "ATAC"
+
+fragpaths <- lapply(seq(1:length(seurat@assays$ATAC@fragments)), function(x){
+  fp <- basename(seurat@assays$ATAC@fragments[[x]]@path)
+})
+
+
+
+
+dir.create("new_peaks")
+peaks <- CallPeaks(object = seurat, 
+                   outdir = "new_peaks" )
+
+frags <- seurat@assays$ATAC@fragments
+peak_matr <- FeatureMatrix(fragments = frags, features = peaks)
+
+annotation <- Annotation(seurat)
+
+seurat[["ATAC"]] <- CreateChromatinAssay(counts = peak_matr   ,
+              sep = c(":", "-"),
+              fragments = frags,
+              annotation = annotation)
+rm(peak_matr)
+
+
+```
+
+
+```{r }
+
+
+saveRDS(seurat, "seurat_after_qc.RDS")
+```

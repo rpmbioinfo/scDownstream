@@ -1,0 +1,166 @@
+---
+params:
+  seurat: "../results/seurat/seurat_after_qc.RDS"
+  pipeline: "multiome"
+  rna_normalization_method: 'sct'
+  umap2_ndims: 30
+  first_lsi_pc: 2
+---
+
+# Dimension reduction and clustering
+```{r setup, warning=F, message=F, echo=knitr::is_html_output(), eval=T}
+
+selected_packages <- c("Seurat",
+                       "Signac",
+                       'tidyverse',
+                       'readxl',
+                       'patchwork',
+                       'clustree')
+#invisible(extrafont::font_import(prompt = F))
+selected_font <- "Arial"
+selected_font_pdf <- "ArialMT"
+#extrafont::loadfonts(device = "win")
+invisible(lapply(selected_packages, library, character.only = TRUE))
+
+if(knitr::is_html_output()){
+  eval_set <- TRUE
+  eval_pdf <- FALSE
+  echo_set <- TRUE
+  message_set <- FALSE
+} else {
+  eval_set <- FALSE
+  eval_pdf <- TRUE
+  echo_set <- FALSE
+  message_set <- FALSE
+}
+
+source("run_funcs.R")
+
+
+knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width = 10, cache.lazy = F)
+
+```
+
+```{r echo=F}
+
+run_gex <- FALSE
+run_atac <- FALSE
+run_adt <- FALSE
+
+multimodal <- FALSE
+
+if(params$pipeline %in% c("cite", 'cite_crispr', 'multiome', 'teaseq')){
+  multimodal <- TRUE
+}
+
+if(params$pipeline != "atac"){
+  run_gex <- TRUE
+}
+
+if(params$pipeline %in% c("atac", 'multiome', 'teaseq')){
+  run_atac <- TRUE
+}
+
+if(params$pipeline %in% c("cite", 'cite_crispr', 'teaseq')){
+  run_adt <- TRUE
+}
+
+```
+
+## Analysis Parameters
+```{r echo=FALSE}
+
+df <- params_to_df(params)
+df
+```
+
+## Load Data
+```{r }
+seurat <- readRDS(params$seurat)
+
+```
+
+## Dimension reduction
+
+`r if(run_gex){"### Gene Expression dimension reduction"}`
+```{r echo=run_gex & echo_set, eval=run_gex, results='asis'}
+
+
+DefaultAssay(seurat) <- "RNA"
+
+if(params$rna_normalization_method == "sct"){
+  seurat <- SCTransform(seurat, vars.to.regress = 'percent.mt', verbose = FALSE) 
+  seurat <- RunPCA(seurat, reduction.name = 'pca') 
+
+
+} else {
+  seurat <- NormalizeData(seurat, normalization.method = "LogNormalize", scale.factor = 10000)
+  seurat <- FindVariableFeatures(seurat, selection.method = "vst", nfeatures = 2000)
+  var_feats <- FindVariableFeatures(seurat)
+  seurat <- ScaleData(seurat, features = row.names(seurat))
+  seurat <- RunPCA(seurat, features = var_feats, reduction.name = 'pca')
+  
+}
+
+VizDimLoadings(seurat, dims = 1:2, reduction = "pca") + ggtitle("Top RNA Variable Features from PC1 and PC2")
+
+ElbowPlot(seurat, ndims = 30) + ggtitle("RNA Elbow Plot to isolate optimal number of dimensions")
+
+cat("Workflow has the number of dimensions set to", params$umap2_ndims, ". Make sure this value is supported by the Eblow Plot or adjust in the config file accordingly.")
+
+reduction_name_rna <- 'umap.rna'
+seurat <- RunUMAP(seurat, dims = 1:params$umap2_ndims, reduction.name = reduction_name_rna, reduction.key = "rnaUMAP_")
+
+DimPlot(seurat, group.by = 'SampleID', label = T, repel = T, raster = T) + NoLegend()
+```
+
+
+
+`r if(run_atac){"### Chromatin Accessibility dimension reduction"}`
+```{r echo=run_atac & echo_set, eval=run_atac, results='asis'}
+
+DefaultAssay(seurat) <- "ATAC"
+seurat <- RunTFIDF(seurat)
+seurat <- FindTopFeatures(seurat, min.cutoff = 'q0')
+seurat <- RunSVD(seurat, reduction.name = 'lsi')
+
+DepthCor(seurat)
+cat("If the correlation for the first component is very strong (close to -1 or 1 ), this means that it captures sequencing depth and should be skipped", 
+    "for dimension reduction (by default). However, if the correlation is not that strong, change the workflow parameter 'first_lsi_pc' to 1 in the config file. ")
+
+
+seurat <- RunUMAP(seurat, reduction = 'lsi', 
+                  dims = params$first_lsi_pc:30, 
+                  reduction.name = "umap.atac", 
+                  reduction.key = "atacUMAP_")
+
+DimPlot(seurat, group.by = 'SampleID', label = T, repel = T, raster = T) + NoLegend()
+
+```
+
+
+`r if(run_adt){"### Protein dimension reduction"}`
+```{r echo=run_adt & echo_set, eval=run_adt, results='asis'}
+
+DefaultAssay(seurat) <- "ADT"
+
+seurat <-  NormalizeData(seurat, normalization.method = 'CLR', margin = 2) %>%
+            ScaleData() %>% 
+            RunPCA(reduction.name = 'apca')
+
+ElbowPlot(seurat, reduction = 'apca', ndims = 30)
+
+
+reduction_name_adt <- 'apca'
+seurat <- RunUMAP(seurat, reduction = 'apca', dims = 1:15, assay = 'ADT', 
+              reduction.name = 'umap.adt', reduction.key = 'adtUMAP_')
+
+
+DimPlot(seurat, group.by = 'SampleID', label = T, repel = T, raster = T) + NoLegend()
+```
+
+
+```{r }
+saveRDS(seurat, file = "seurat_dim_reduced.RDS")
+
+```

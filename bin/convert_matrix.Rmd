@@ -1,0 +1,93 @@
+---
+title: "create_seurat"
+output: html_document
+date: "2024-07-29"
+params:
+  annotation: ""
+  pipeline: "multiome"
+  sample: "test"
+---
+
+```{r setup, include=FALSE}
+
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(Signac))
+suppressPackageStartupMessages(library(BPCells))
+
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, fig.align = "center")
+```
+
+
+
+
+```{r }
+
+if(params$pipeline %in% c('multiome', 'teaseq', 'atac')){
+  annotations <- readRDS("signac_annotation.RDS")
+}
+
+
+
+if(params$pipeline %in% c('multiome', 'teaseq', 'atac')){
+  frags <- open_fragments_10x("atac_fragments.tsv.gz")
+  counts_peak <- open_matrix_10x_hdf5()
+}
+
+
+
+
+create_matrix_dir <- function(h5,
+                                 sample = params$sample,
+                                 pipeline, 
+                                 fragpath ="atac_fragments.tsv.gz", 
+                                 barcode_metrics = "per_barcode_metrics.csv", 
+                                 annotation){
+  counts_10x <- Read10X_h5(h5)
+  
+  dir.create(params$sample)
+  if(pipeline %in% c("multiome", "teaseq")){
+    barcode_metric_df <- read.table(barcode_metrics, 
+                       stringsAsFactors = FALSE,
+                       sep = ",",
+                       header = TRUE,
+                       row.names = 1) %>%
+                      dplyr::select(is_cell, atac_fragments, atac_peak_region_fragments)
+    write_csv(barcode_metric_df, file = paste0(params$sample, "_barcode_df.csv"))
+    
+  } else if(pipeline %in% c("cite", "crispr", "cite_crispr")){
+    counts <- open_matrix_10x_hdf5(path = h5, 
+                                   feature_type = "Gene Expression")
+  } else if(pipeline %in% c("rna")){
+    counts <- open_matrix_10x_hdf5(path = h5, 
+                                   feature_type = "Gene Expression")
+  } else if(pipeline %in% c("atac")){
+    chrom_assay <- CreateChromatinAssay(
+                    counts = counts,
+                    sep = c(":", "-"),
+                    fragments = fragpath,
+                    min.cells = 10,
+                    min.features = 200,
+                    annotation = annotation)
+                    
+    tmp <- CreateSeuratObject(
+                  counts = chrom_assay,
+                  assay = "ATAC")
+  }
+  
+  if(pipeline %in% c("cite", 'cite_crispr')){
+    adt_assay <- CreateAssay5Object(counts = counts$`Antibody Capture`)
+    tmp[['ADT']] <- adt_assay
+  }
+  
+  if(pipeline %in% c('crispr', 'cite_crispr')){
+    crispr_assay <- CreateAssay5Object(counts = counts$`CRISPR Guide Capture`)
+    tmp[['CRISPR']] <- crispr_assay
+  }
+  tmp$SampleID <- sample
+  return(tmp)
+  
+}
+
+ 
+```

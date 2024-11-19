@@ -1,0 +1,253 @@
+---
+params:
+  seurat: "../results/seurat/seurat_after_qc.RDS"
+  pipeline: "multiome"
+  integrate_datasets: TRUE
+  integration_method: "CCA"
+  integrate_by: "Project"
+  view_batch: ['Group', 'Project', "Genomics Core Folder"]
+  umap2_ndims: 30
+  first_lsi_pc: 2
+---
+
+## Dataset Integration
+Differences in tissue type, library preparation or a number of other factors can lead to batch effect-like outputs after dimension reduction and clustering. 
+
+```{r setup, warning=F, message=F, echo=knitr::is_html_output(), eval=T}
+
+selected_packages <- c("Seurat",
+                       "Signac",
+                       'tidyverse',
+                       'readxl',
+                       'patchwork',
+                       'clustree')
+#invisible(extrafont::font_import(prompt = F))
+selected_font <- "Arial"
+selected_font_pdf <- "ArialMT"
+#extrafont::loadfonts(device = "win")
+invisible(lapply(selected_packages, library, character.only = TRUE))
+
+if(knitr::is_html_output()){
+  eval_set <- TRUE
+  eval_pdf <- FALSE
+  echo_set <- TRUE
+  message_set <- FALSE
+} else {
+  eval_set <- FALSE
+  eval_pdf <- TRUE
+  echo_set <- FALSE
+  message_set <- FALSE
+}
+
+source("run_funcs.R")
+
+
+knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width = 10, cache.lazy = F)
+
+```
+
+```{r echo=F}
+
+run_gex <- FALSE
+run_atac <- FALSE
+run_adt <- FALSE
+
+multimodal <- FALSE
+
+if(params$pipeline %in% c("cite", 'cite_crispr', 'multiome', 'teaseq')){
+  multimodal <- TRUE
+}
+
+if(params$pipeline != "atac"){
+  run_gex <- TRUE
+}
+
+if(params$pipeline %in% c("atac", 'multiome', 'teaseq')){
+  run_atac <- TRUE
+}
+
+if(params$pipeline %in% c("cite", 'cite_crispr', 'teaseq')){
+  run_adt <- TRUE
+}
+
+```
+
+### Analysis Parameters
+```{r echo=FALSE}
+
+
+df <- params_to_df(params)
+df
+```
+
+### Load Data
+```{r }
+seurat <- readRDS(params$seurat)
+
+```
+
+
+### View Batch Effects
+We will first attempt to visualize potential batch effects to decide whether we need to correct for them. 
+
+`r if(run_gex){"### RNA Batch"}`
+```{r eval=run_gex, echo=run_gex & echo_set }
+for(i in params$view_batch){
+  print(DimPlot(seurat, group.by = "SampleID", split.by = i, reduction = 'umap.rna' , label = T, repel = T) + NoLegend())
+}
+
+
+
+```
+
+```{r echo=F}
+integrate_blurb <- paste0("#### RNA Batch Integration\nPipeline set to `integrate_datasets` to **TRUE**. Integrating **RNA** modality across datasets from variable ",
+                          params$integrate_by)
+
+```
+
+
+`r if(run_gex & params$integrate_datasets){integrate_blurb}`
+```{r eval=run_gex & params$integrate_datasets, echo=run_gex & params$integrate_datasets & echo_set}
+
+if(params$integration_method == "CCA"){
+  intMeth <- CCAIntegration
+} else if(params$integration_method == "RPCA"){
+   intMeth <- RPCAIntegration
+} else if(params$integration_method == "Harmony"){
+   intMeth <- HarmonyIntegration
+} else if(params$integration_method == "FastMNN"){
+   intMeth <- FastMNNIntegration
+} 
+
+int_factor <- setNames(seurat[[params$integrate_by]][,1],colnames(seurat))
+
+
+
+
+DefaultAssay(seurat) <- 'RNA'
+seurat[['RNA']] <- split(seurat[['RNA']], f = int_factor )
+seurat <- IntegrateLayers(object = seurat, 
+                          method = intMeth,
+                          orig.reduction = "pca", 
+                          new.reduction = "integrated.rna",
+                          verbose = FALSE)
+seurat <- JoinLayers(seurat)
+
+
+
+
+
+seurat <- RunUMAP(seurat, reduction = 'integrated.rna', dims = 1:params$umap2_ndims, reduction.name = 'umap.rna.int')
+
+
+p1 <- DimPlot(seurat, group.by = params$integrate_by, reduction = 'umap.rna' ) + ggtitle("Non integrated RNA")
+p2 <- DimPlot(seurat, group.by = params$integrate_by, reduction = 'umap.rna.int' ) + ggtitle("Integrated RNA")
+
+( p1 | p2 ) + plot_layout(guides = "collect")
+```
+
+
+
+
+`r if(run_atac){"### ATAC Batch"}`
+```{r eval=run_atac, echo=run_atac & echo_set }
+for(i in params$view_batch){
+  print(DimPlot(seurat, group.by = "SampleID", split.by = i, reduction = 'umap.atac' , label = T, repel = T) + NoLegend())
+}
+
+
+
+```
+
+```{r echo=F}
+integrate_blurb <- paste0("#### ATAC Batch Integration\nPipeline set to `integrate_datasets` to **TRUE**. Integrating **ATAC** modality across datasets from variable ",
+                          params$integrate_by)
+
+```
+
+`r if(run_atac & params$integrate_datasets){integrate_blurb}`
+```{r eval=run_atac & params$integrate_datasets, echo=run_atac & params$integrate_datasets}
+
+DefaultAssay(seurat) <- 'ATAC'
+split_obj <- SplitObject(seurat, split.by = params$integrate_by)
+
+
+integration.anchors <- FindIntegrationAnchors(
+  object.list = split_obj,
+  anchor.features = rownames(seurat),
+  reduction = "rlsi",
+  dims = params$first_lsi_pc:30
+)
+
+# integrate LSI embeddings
+integrated <- IntegrateEmbeddings(
+  anchorset = integration.anchors,
+  reductions = seurat[["lsi"]],
+  new.reduction.name = "integrated_lsi",
+  dims.to.integrate = 1:30
+)
+seurat[['integrated_lsi']] <- integrated[['integrated_lsi']]
+
+# rm(integrated)
+# rm(split_obj)
+
+seurat <- RunUMAP(seurat, reduction = "integrated_lsi", dims = 2:30, reduction.name = 'umap.atac.int')
+
+
+p1 <- DimPlot(seurat, group.by = params$integrate_by, reduction = 'umap.atac' , raster = T) + ggtitle("Non integrated ATAC")
+p2 <- DimPlot(seurat, group.by = params$integrate_by, reduction = 'umap.atac.int' , raster = T) + ggtitle("Integrated ATAC")
+
+( p1 | p2 )  + plot_layout(guides = "collect")
+```
+
+`r if(run_adt){"### Protein Batch"}`
+```{r eval=run_adt, echo=run_adt & echo_set }
+for(i in params$view_batch){
+  print(DimPlot(seurat, group.by = "SampleID", split.by = i, reduction = 'umap.adt' , label = T, repel = T, raster = T) + NoLegend())
+}
+
+
+
+```
+
+```{r echo=F}
+integrate_blurb <- paste0("#### Protein Batch Integration\nPipeline set to `integrate_datasets` to **TRUE**. Integrating **ADT** modality across datasets from variable ",
+                          params$integrate_by)
+
+```
+
+`r if(run_adt & params$integrate_datasets){integrate_blurb}`
+```{r eval=run_adt & params$integrate_datasets, echo=run_adt & params$integrate_datasets & echo_set}
+
+
+DefaultAssay(seurat) <- 'ADT'
+
+int_factor <- setNames(seurat[[params$integrate_by]][,1],colnames(seurat))
+
+seurat[['ADT']] <- split(seurat[['ADT']], f = int_factor )
+
+
+seurat <- IntegrateLayers(object = seurat, 
+                          method = intMeth,
+                          orig.reduction = "apca", 
+                          new.reduction = "integrated.adt",
+                          normalization.method = 'CLR',
+                          verbose = FALSE)
+seurat <- JoinLayers(seurat)
+
+
+
+seurat <- RunUMAP(seurat, reduction = 'integrated.adt', dims = 1:20, reduction.name = 'umap.adt.int')
+
+
+p1 <- DimPlot(seurat, group.by = params$integrate_by, reduction = 'umap.adt' , raster = T) + ggtitle("Non integrated ADT")
+p2 <- DimPlot(seurat, group.by = params$integrate_by, reduction = 'umap.adt.int' , raster = T) + ggtitle("Integrated ADT")
+
+( p1 | p2 ) + plot_layout(guides = "collect")
+```
+
+```{r }
+saveRDS(seurat, file = "seurat_integrated.RDS")
+
+```

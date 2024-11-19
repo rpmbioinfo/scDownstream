@@ -1,0 +1,565 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com//master/nextflow_schema.json",
+    "title": " pipeline parameters",
+    "description": "",
+    "type": "object",
+    "definitions": {
+        "input_output_options": {
+            "title": "Input/output options",
+            "type": "object",
+            "fa_icon": "fas fa-terminal",
+            "description": "Define where the pipeline should find input data and save output data.",
+            "required": [
+                "input",
+                "outdir"
+            ],
+            "properties": {
+                "input": {
+                    "type": "string",
+                    "format": "file-path",
+                    "exists": true,
+                    "schema": "assets/schema_input.json",
+                    "mimetype": "text/csv",
+                    "pattern": "",
+                    "description": "Path to count files from a cellranger alignment",
+                    "help_text": "You will need to create a design file with information about the samples in your experiment before running the pipeline. Use this parameter to specify its location. It has to be a comma-separated file with 3 columns, and a header row.",
+                    "fa_icon": "fas fa-file-csv"
+                },
+                "outdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "The output directory where the results will be saved. You have to use absolute paths to storage on Cloud infrastructure.",
+                    "fa_icon": "fas fa-folder-open"
+                },
+                "matrix": {
+                    "type": "string",
+                    "default": "filtered",
+                    "description": "Select which counts (filtered or raw) to select from"
+                }
+            }
+        },
+        "project_description": {
+            "title": "Project Description",
+            "type": "object",
+            "description": "",
+            "default": "",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "default": "Generic description",
+                    "hidden": true,
+                    "description": "Project description text"
+                },
+                "data": {
+                    "type": "string",
+                    "default": "Generic data description",
+                    "hidden": true,
+                    "description": "Project data description text"
+                },
+                "objectives": {
+                    "type": "string",
+                    "default": "Generic objectives",
+                    "hidden": true,
+                    "description": "Project objectives text"
+                },
+                "metadata": {
+                    "type": "string",
+                    "description": "Sample metadata",
+                    "pattern": "^\\S+\\.(xlsx|xls|csv|tsv)$"
+                },
+                "quarto_index": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/project_assets/index.qmd",
+                    "description": "Quarto index file"
+                },
+                "logo": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/project_assets/logo.jpeg",
+                    "hidden": true,
+                    "description": "Quarto report logo"
+                },
+                "quarto_yml": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/project_assets/_quarto_full.yml",
+                    "hidden": true,
+                    "description": "Quarto YAML file"
+                },
+                "outcomes": {
+                    "type": "string",
+                    "default": "['Group']",
+                    "description": "Selected outcomes for differential expression"
+                },
+                "sample_exclusion": {
+                    "type": "string",
+                    "description": "Samples to exclude from analysis"
+                }
+            }
+        },
+        "workflow_control": {
+            "title": "Workflow Control",
+            "type": "object",
+            "description": "",
+            "default": "",
+            "properties": {
+                "stop_after": {
+                    "type": "string",
+                    "description": "Interupt workflow after specified step",
+                    "enum": [
+                        "QC",
+                        "DR",
+                        "INT",
+                        "CLUST"
+                    ]
+                }
+            }
+        },
+        "analysis_details": {
+            "title": "Analysis details",
+            "type": "object",
+            "description": "",
+            "default": "",
+            "properties": {
+                "pipeline": {
+                    "type": "string",
+                    "default": "multiome",
+                    "description": "Analysis pipeline. Change based on dataset",
+                    "enum": [
+                        "multiome",
+                        "rna",
+                        "atac",
+                        "cite",
+                        "teaseq",
+                        "crispr",
+                        "cite_crispr"
+                    ]
+                },
+                "process_gex": {
+                    "type": "boolean",
+                    "default": true,
+                    "hidden": true
+                },
+                "process_atac": {
+                    "type": "boolean",
+                    "default": true,
+                    "hidden": true
+                },
+                "integrate_modalities": {
+                    "type": "boolean",
+                    "description": "Weighted Nearest Neighbor Integration",
+                    "default": true
+                },
+                "demultiplex": {
+                    "type": "boolean",
+                    "description": "Demultiplex data. Currently inactive"
+                },
+                "rna_normalization_method": {
+                    "type": "string",
+                    "default": "sct",
+                    "enum": [
+                        "sct",
+                        "log"
+                    ],
+                    "description": "RNA modality normalization method"
+                }
+            }
+        },
+        "species_details": {
+            "title": "Species details",
+            "type": "object",
+            "description": "",
+            "default": "",
+            "properties": {
+                "genome": {
+                    "type": "string",
+                    "default": "GRCh38",
+                    "description": "Selected genome"
+                },
+                "annotation": {
+                    "type": "string",
+                    "description": "Annotation Hub accession for gtf"
+                },
+                "mito_regex": {
+                    "type": "string",
+                    "description": "REGEX pattern for mitochondrial genes for  this species"
+                },
+                "ribo_regex": {
+                    "type": "string",
+                    "description": "REGEX pattern for ribosomal genes for  this species number of counts per cell"
+                },
+                "bsgenome": {
+                    "type": "string",
+                    "description": "Path to BSgenome package for specified species"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Species name"
+                }
+            }
+        },
+        "gex_qc_metrics": {
+            "title": "GEX QC Metrics",
+            "type": "object",
+            "description": "",
+            "default": "",
+            "properties": {
+                "percent_mt": {
+                    "type": "integer",
+                    "default": 10,
+                    "description": "Accepted percentage of mitochondrial content per cell"
+                },
+                "percent_ribo": {
+                    "type": "integer",
+                    "default": 0,
+                    "description": "Accepted percentage of ribosomal content per cell"
+                },
+                "nCount_RNA_min": {
+                    "type": "integer",
+                    "default": 1000,
+                    "description": "Minimal number of counts per cell (RNA)",
+                    "minimum": 100,
+                    "maximum": 10000
+                },
+                "nCount_RNA_max": {
+                    "type": "integer",
+                    "default": 25000,
+                    "description": "Maximal number of counts per cell (RNA)",
+                    "minimum": 5000,
+                    "maximum": 100000
+                },
+                "nFeature_RNA_min": {
+                    "type": "integer",
+                    "default": 500,
+                    "description": "Minimal number of features per cell (RNA)",
+                    "minimum": 100,
+                    "maximum": 2500
+                },
+                "nFeature_RNA_max": {
+                    "type": "integer",
+                    "default": 2500,
+                    "description": "Maximal number of features per cell (RNA)",
+                    "minimum": 1000,
+                    "maximum": 10000
+                }
+            }
+        },
+        "atac_qc_metrics": {
+            "title": "ATAC QC Metrics",
+            "type": "object",
+            "description": "",
+            "default": "",
+            "properties": {
+                "nCount_ATAC_min": {
+                    "type": "integer",
+                    "default": 1000,
+                    "description": "Minimal number of counts per cell (ATAC)",
+                    "minimum": 100,
+                    "maximum": 5000
+                },
+                "nCount_ATAC_max": {
+                    "type": "integer",
+                    "default": 0,
+                    "description": "Maximal number of counts per cell (ATAC)",
+                    "minimum": 0,
+                    "maximum": 100000
+                },
+                "nucleosome_signal_min": {
+                    "type": "integer",
+                    "default": 0,
+                    "description": "Minimal nucleosome signal  per cell (ATAC)"
+                },
+                "nucleosome_signal_max": {
+                    "type": "integer",
+                    "default": 4,
+                    "description": "Maximal nucleosome signal  per cell (ATAC)"
+                },
+                "TSS_enrichment": {
+                    "type": "integer",
+                    "default": 2,
+                    "description": "Minimum Transcription start Site enrichment score"
+                },
+                "atac_peak_region_fragments_min": {
+                    "type": "integer",
+                    "default": 1000,
+                    "description": "Minimum number of fragments in peaks"
+                },
+                "atac_peak_region_fragments_max": {
+                    "type": "integer",
+                    "default": 50000,
+                    "description": "Maximum number of fragments in peaks"
+                },
+                "pct_reads_in_peaks_min": {
+                    "type": "integer",
+                    "default": 20,
+                    "description": "Minimum percentage of reags in peaks",
+                    "minimum": 0,
+                    "maximum": 100
+                },
+                "blacklist_fraction": {
+                    "type": "number",
+                    "default": 0.05,
+                    "description": "Maximum percentage of reads found in blacklisted regions",
+                    "minimum": 0,
+                    "maximum": 1
+                }
+            }
+        },
+        "dimension_reduction_clustering": {
+            "title": "Dimension reduction / clustering",
+            "type": "object",
+            "description": "",
+            "default": "",
+            "properties": {
+                "umap1_ndims": {
+                    "type": "integer",
+                    "default": 30,
+                    "description": "Selected number of dimensions (before doublet filtering)",
+                    "minimum": 0,
+                    "maximum": 50
+                },
+                "clustering1_res": {
+                    "type": "number",
+                    "default": 0.8,
+                    "description": "Sclustering resolution (before doublet filtering)",
+                    "minimum": 0.1,
+                    "maximum": 1.5
+                },
+                "umap2_ndims": {
+                    "type": "integer",
+                    "default": 30,
+                    "description": "Selected number of dimensions (after doublet filtering)"
+                },
+                "clustering2_res": {
+                    "type": "number",
+                    "default": 0.8,
+                    "description": "Selected number of dimensions (after doublet filtering)",
+                    "minimum": 0.1,
+                    "maximum": 1.5
+                },
+                "first_lsi_pc": {
+                    "type": "integer",
+                    "default": 2,
+                    "description": "Selected first LSI component (ATAC)",
+                    "minimum": 1,
+                    "maximum": 2
+                }
+            }
+        },
+        "dataset_integration": {
+            "title": "Dataset integration",
+            "type": "object",
+            "description": "",
+            "default": "",
+            "properties": {
+                "view_batch": {
+                    "type": "string",
+                    "default": "Project",
+                    "description": "Metadata variable to visualize"
+                },
+                "integrate_datasets": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Batch correct by variable defined"
+                },
+                "integrate_by": {
+                    "type": "string",
+                    "default": "Project"
+                },
+                "integration_method": {
+                    "type": "string",
+                    "default": "CCA",
+                    "enum": [
+                        "CCA",
+                        "RPCA",
+                        "Harmony",
+                        "FastMNN"
+                    ],
+                    "description": "Integration method"
+                }
+            }
+        },
+        "cell_annotation": {
+            "title": "Cell Annotation",
+            "type": "object",
+            "description": "",
+            "default": "",
+            "properties": {
+                "annotation_resolution": {
+                    "type": "string",
+                    "default": "cell",
+                    "description": "Choose between cell level or cluster level annotations",
+                    "enum": [
+                        "cell",
+                        "cluster"
+                    ]
+                },
+                "run_azimuth": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Run Azimuth for cell annotation (in combination with --azimuth reference)"
+                },
+                "azimuth_reference": {
+                    "type": "string",
+                    "default": "pbmcref",
+                    "description": "Selected dataset for Azimuth",
+                    "enum": [
+                        "pbmcref",
+                        "tonsilref",
+                        "pancreasref",
+                        "lungref",
+                        "kidneyref",
+                        "heartref",
+                        "fetusref",
+                        "bonemarrowref",
+                        "adiposeref"
+                    ]
+                },
+                "run_singler": {
+                    "type": "boolean",
+                    "description": "Run SingleR for cell annotation (in combination with --singler reference)"
+                },
+                "singler_reference": {
+                    "type": "string",
+                    "default": "monaco_immune",
+                    "description": "Selected dataset for SingleR"
+                },
+                "run_scimilarity": {
+                    "type": "boolean"
+                },
+                "scimilarity_reference": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/SCimilarity/assets/model_v1.1.tar.gz"
+                },
+                "selected_method": {
+                    "type": "string",
+                    "default": "azimuth"
+                },
+                "markers_rna": {
+                    "type": "string",
+                    "default": "['FOXP3', 'TBX21', 'CD38', 'CCR7', 'KLRB1', 'KLRD1', 'CD3E', 'CD8B', 'CD79A', 'CD19', 'CD1C', 'CD14', 'FCGR3A', 'NCAM1', 'MS4A1', 'CD3D', 'LILRA4', 'IL3RA', 'CD4', 'CD8A', 'GATA3', 'IL7R', 'ID2', 'ZBTB46', 'CLEC9A', 'BATF3', 'IL2RA', 'CD27', 'HLA-DRB1', 'PRF1', 'GZMB', 'SDC1', 'THBD', 'IGHM', 'IGHD']",
+                    "hidden": true
+                },
+                "markers_adt": {
+                    "type": "string",
+                    "default": "['CD3E', 'CD4', 'CD8', 'CD14', 'CD16', 'CD56', 'CD1C', 'CD19']",
+                    "hidden": true
+                }
+            }
+        },
+        "script_collection": {
+            "title": "Script Collection",
+            "type": "object",
+            "description": "",
+            "default": "",
+            "properties": {
+                "scripts": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin"
+                },
+                "get_annot": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/get_ensdb_annotation.Rmd",
+                    "hidden": true
+                },
+                "create_seurat": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/create_seurat.Rmd",
+                    "hidden": true
+                },
+                "qc_script": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/QC.qmd",
+                    "hidden": true
+                },
+                "dimreduc_script": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/dimension_reduction.qmd",
+                    "hidden": true
+                },
+                "int_script": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/integrate_datasets.qmd",
+                    "hidden": true
+                },
+                "int_multimod_script": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/integrate_modalities.qmd",
+                    "hidden": true
+                },
+                "clustering_script": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/clustering.qmd",
+                    "hidden": true
+                },
+                "annotation_script": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/cell_annotation.qmd",
+                    "hidden": true
+                }
+            }
+        },
+        "doublets": {
+            "title": "Doublets",
+            "type": "object",
+            "description": "",
+            "default": "",
+            "properties": {
+                "doublet_removal": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "doublet_confidence": {
+                    "type": "string",
+                    "default": "all"
+                }
+            }
+        }
+    },
+    "allOf": [
+        {
+            "$ref": "#/definitions/input_output_options"
+        },
+        {
+            "$ref": "#/definitions/project_description"
+        },
+        {
+            "$ref": "#/definitions/workflow_control"
+        },
+        {
+            "$ref": "#/definitions/analysis_details"
+        },
+        {
+            "$ref": "#/definitions/species_details"
+        },
+        {
+            "$ref": "#/definitions/gex_qc_metrics"
+        },
+        {
+            "$ref": "#/definitions/atac_qc_metrics"
+        },
+        {
+            "$ref": "#/definitions/dimension_reduction_clustering"
+        },
+        {
+            "$ref": "#/definitions/dataset_integration"
+        },
+        {
+            "$ref": "#/definitions/cell_annotation"
+        },
+        {
+            "$ref": "#/definitions/script_collection"
+        },
+        {
+            "$ref": "#/definitions/doublets"
+        }
+    ],
+    "properties": {
+        "help": {
+            "type": "string"
+        },
+        "genome_dir": {
+            "type": "string",
+            "default": "s3://patru-genomes"
+        }
+    }
+}

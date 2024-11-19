@@ -1,0 +1,18 @@
+# Project {.unnumbered}
+
+## Description
+
+Malaria
+
+## Data
+Multiome
+
+## Goals
+
+1. Malaria Multiome
+
+## Strategy
+
+1. QC
+2. DE
+3. TF
