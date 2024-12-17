@@ -4,13 +4,7 @@ process QUALITY_CONTROL {
     stageInMode 'copy'
     publishDir "$params.outdir/seurat", mode:'copy', pattern: "seurat_after_qc.RDS"
     publishDir "$params.outdir/quarto", mode:'copy', pattern: "*.qmd"
-    publishDir "$params.outdir/quarto", mode:'copy', pattern: "_quarto_full.yml"
-    publishDir "$params.outdir/quarto", mode:'copy', pattern: "index.qmd"
-    publishDir "$params.outdir/quarto", mode:'copy', pattern: "run_funcs.R"
-    publishDir "$params.outdir/quarto", mode:'copy', pattern: "favicon-32x32.png"
-    publishDir "$params.outdir/quarto", mode:'copy', pattern: "rpm_en_logo_lowres.jpg"
-    publishDir "$params.outdir/quarto", mode:'copy', pattern: "*.qmd"
-    publishDir "$params.outdir/quarto/", mode:'copy', pattern: "_freeze/${rmd.basename}/*"
+    publishDir "$params.outdir/quarto/", mode:'copy', pattern: "_freeze/${rmd.baseName}/*"
 
 
     input:
@@ -43,13 +37,13 @@ process QUALITY_CONTROL {
     val clustering1_res
     val doublet_removal
     val doublet_confidence
+    val sketch_cells
+    val sketch_n
 
     output:
     path "*_freeze.zip", emit: quarto
     path "seurat_after_qc.RDS", emit:seurat
     path rmd, emit:script
-    path book_assets, emit: assets
-
 
     script:
     """
@@ -79,7 +73,43 @@ process QUALITY_CONTROL {
                     -P umap1_ndims:"${umap1_ndims}" \
                     -P clustering1_res:"${clustering1_res}" \
                     -P doublet_removal:"${doublet_removal}" \
-                    -P doublet_confidence:"${doublet_confidence}"
+                    -P doublet_confidence:"${doublet_confidence}" \
+                    -P sketch_cells:"${sketch_cells}" \
+                    -P sketch_n:"${sketch_n}"
+
+    bash chapter_package.sh "${rmd.baseName}"
+    """
+
+}
+
+
+process CALL_PEAKS {
+    tag "Performing Quality Control..."
+
+    stageInMode 'copy'
+    publishDir "$params.outdir/seurat", mode:'copy', pattern: "seurat_new_peaks.RDS"
+    publishDir "$params.outdir/quarto", mode:'copy', pattern: "*.qmd"
+    publishDir "$params.outdir/quarto", mode:'copy', pattern: "*.qmd"
+    publishDir "$params.outdir/quarto/", mode:'copy', pattern: "_freeze/${rmd.baseName}/*"
+
+
+    input:
+    path seurat
+    val pipeline
+    path rmd
+    path book_assets
+
+    output:
+    path "*_freeze.zip", emit: quarto
+    path "seurat_new_peaks.RDS", emit:seurat
+    path rmd, emit:script
+
+    script:
+    """
+    Rscript filter_yaml.R ${rmd}
+    quarto render ${rmd} \
+                    -P pipeline:"${pipeline}" \
+                    -P seurat:"${seurat}"
 
     bash chapter_package.sh "${rmd.baseName}"
     """

@@ -15,6 +15,11 @@ process CLUSTERING {
     val clustering2_res
     val integrate_datasets
     val outcomes
+    val sketch_cells
+    val de_method
+    val de_latent_vars
+    val de_min_pct
+    val de_logfc
  
 
     output:
@@ -30,8 +35,12 @@ process CLUSTERING {
                     -P pipeline:"${pipeline}" \
                     -P clustering2_res:${clustering2_res} \
                     -P integrate_datasets:${integrate_datasets} \
-                    -P outcomes:"${outcomes}"
-
+                    -P outcomes:"${outcomes}" \
+                    -P sketch_cells:"${sketch_cells}" \
+                    -P de_method:"${de_method}" \
+                    -P de_latent_vars:"${de_latent_vars}" \
+                    -P de_min_pct:"${de_min_pct}" \
+                    -P de_logfc:"${de_logfc}" \
 
     bash chapter_package.sh "${rmd.baseName}"
     """

@@ -5,7 +5,12 @@ params:
   integrate_datasets: true
   clustering2_res: 0.8
   outcomes: "none"
-
+  sketch_cells: true
+  rna_normalization_method: "log"
+  de_method: "wilcox"
+  de_latent_vars: ["percent.mt"]
+  de_min_pct: 0.01
+  de_logfc: 0.05
 ---
 
 ## Clustering
@@ -19,7 +24,8 @@ selected_packages <- c("Seurat",
                        'patchwork',
                        'clustree', 
                        'DT',
-                       'ggrastr')
+                       'ggrastr',
+                       'presto')
 #invisible(extrafont::font_import(prompt = F))
 selected_font <- "Arial"
 selected_font_pdf <- "ArialMT"
@@ -68,7 +74,7 @@ if(params$pipeline == "rna"){
   }
 }
 
-if(params$pipeline %in% c("cite", 'cite_crispr', 'multiome', 'teaseq')){
+if(params$pipeline %in% c("cite", 'multiome', 'teaseq')){
   multimodal <- TRUE
   reduction_sel <- "wnn.umap"
 }
@@ -81,11 +87,11 @@ if(params$pipeline %in% c("atac", 'multiome', 'teaseq')){
   run_atac <- TRUE
 }
 
-if(params$pipeline %in% c("cite", 'cite_crispr', 'teaseq')){
+if(params$pipeline %in% c("cite", 'teaseq')){
   run_adt <- TRUE
 }
 
-if(params$pipeline %in% c("cite", 'cite_crispr', 'teaseq', 'multiome')){
+if(params$pipeline %in% c("cite", 'teaseq', 'multiome')){
   reduction_sel <- "wnn.umap"
 }
 
@@ -96,7 +102,10 @@ if(params$pipeline %in% c("cite", 'cite_crispr', 'teaseq', 'multiome')){
 
 df <- params_to_df(params)
 df
+
+
 ```
+
 
 ### Load Data
 ```{r }
@@ -104,13 +113,23 @@ seurat <- readRDS(params$seurat)
 
 ```
 
+```{r echo=FALSE}
+
+invalid_latent_var <- setdiff(params$de_latent_vars, colnames(seurat[[]]))
+if (length(invalid_latent_var) == 1) {
+  stop(paste0("The variable ", invalid_latent_var, " was not found in the Seurat object metadata and cannot be used for differential expression. Aborting."))
+} else if (length(invalid_latent_var) > 1){
+  stop(paste0("The variables ", invalid_latent_var, " were not found in the Seurat object metadata and cannot be used for differential expression. Aborting."))
+}  
+
+```
 
 ### Clustering Tree
 Clustering is performed at different resolutions. 
 A clustering tree is then produced to evaluate the which clustering resolution best captures the data, to avoid over- or under-clustering it. 
 Good clusters are stable across a few resolutions. More information can be [found here](https://cran.r-project.org/web/packages/clustree/vignettes/clustree.html)
 
-```{r eval=multimodal, echo=multimodal & echo_set}
+```{r eval=multimodal & params$sketch_cells, echo=multimodal & echo_set & params$sketch_cells}
 seurat <- FindClusters(seurat, graph.name = "wsnn", algorithm = 1, verbose = FALSE, resolution = seq(0.1, 1.2, by = 0.1))
 
 
@@ -181,11 +200,27 @@ DimPlot(seurat, group.by = "seurat_clusters", reduction = reduction_sel , raster
 ### Cluster markers
 `r if(run_gex){"#### RNA Markers"}`
 ```{r eval=run_gex, echo=run_gex & echo_set}
-DefaultAssay(seurat) <- 'RNA'
 
-rna_markers <- FindAllMarkers(seurat, only.pos = T, test.use = 'wilcox',
-                              logfc.threshold = 0.05,
-                              min.pct = 0.01) %>%
+if(params$rna_normalization_method == "sct"){
+  DefaultAssay(seurat) <- 'SCT'
+} else {
+  DefaultAssay(seurat) <- 'RNA'
+}
+
+if (params$de_method %in% c("LR", "negbinom", 'poisson', 'MAST')){
+  latent_vars <- params$de_latent_vars
+} else {
+  latent_vars <- NULL
+}
+
+
+rna_markers <- FindAllMarkers(seurat, 
+                              only.pos = T, 
+                              test.use = params$de_method,
+                              logfc.threshold = params$de_min_pct,
+                              min.pct = params$de_min_pct,
+                              latent.vars = latent_vars
+                              ) %>%
                 dplyr::filter(avg_log2FC > 1) %>%
                 dplyr::filter(p_val_adj < 0.01)
 
@@ -215,8 +250,9 @@ if(knitr::is_html_output()){
 }
 
 
-p <- DoHeatmap(seurat, features = unique(top_rna_markers$gene), raster = T) + NoLegend()
+seurat <- ScaleData(seurat, features = unique(c(VariableFeatures(seurat),top_rna_markers$gene)), vars.to.regress = latent_vars, assay = "RNA")
 
+p <- DoHeatmap(seurat, features = unique(top_rna_markers$gene), raster = T, slot = "scale.data", assay = "RNA") 
 
 hm_filename <- "cluster_markers_rna_heatmap.jpeg"
 ggsave(p, filename = hm_filename, device = "jpeg", dpi = 300, units = "in")
@@ -230,9 +266,11 @@ p
 ```{r eval=run_atac, echo=run_atac & echo_set}
 DefaultAssay(seurat) <- 'ATAC'
 
-atac_markers <- FindAllMarkers(seurat, only.pos = T, test.use = 'wilcox',
-                              logfc.threshold = 0.05,
-                              min.pct = 0.01) %>%
+atac_markers <- FindAllMarkers(seurat, only.pos = T, 
+                               test.use = params$de_method,
+                              logfc.threshold = params$de_logfc,
+                              min.pct = params$de_min_pct,
+                              latent.vars = latent_vars) %>%
                 dplyr::filter(avg_log2FC > 1) %>%
                 dplyr::filter(p_val_adj < 0.01) 
 
@@ -241,7 +279,7 @@ top_atac_markers <- atac_markers %>%
                   slice_max(., order_by = avg_log2FC, n = 10) %>%
                   ungroup()
 
-DefaultAssay(seurat) <- "ATAC"
+#DefaultAssay(seurat) <- "ATAC"
 peak_annot <- ClosestFeature(seurat, atac_markers$gene) %>%
                 dplyr::select(gene_name, gene_id, gene_biotype, type, query_region, closest_region, distance)
 
@@ -284,9 +322,11 @@ if(knitr::is_html_output()){
 seurat[['RNA']] <- GeneActivity(seurat, assay = 'ATAC')
 DefaultAssay(seurat) <- 'RNA'
 
-rna_markers <- FindAllMarkers(seurat, only.pos = T, test.use = 'wilcox',
-                              logfc.threshold = 0.05,
-                              min.pct = 0.01) %>%
+rna_markers <-  FindAllMarkers(seurat, only.pos = T, 
+                               test.use = params$de_method,
+                              logfc.threshold = params$de_logfc,
+                              min.pct = params$de_min_pct,
+                              latent.vars = latent_vars) %>%
                 dplyr::filter(avg_log2FC > 1) %>%
                 dplyr::filter(p_val_adj < 0.01)
 
@@ -332,9 +372,11 @@ p
 ```{r eval=run_adt, echo=run_adt & echo_set}
 DefaultAssay(seurat) <- 'ADT'
 
-adt_markers <- FindAllMarkers(seurat, only.pos = T, test.use = 'wilcox',
-                              logfc.threshold = 0.05,
-                              min.pct = 0.01) %>%
+adt_markers <-  FindAllMarkers(seurat, only.pos = T, 
+                               test.use = params$de_method,
+                              logfc.threshold = params$de_logfc,
+                              min.pct = params$de_min_pct,
+                              latent.vars = latent_vars) %>%
                 dplyr::filter(avg_log2FC > 1) %>%
                 dplyr::filter(p_val_adj < 0.01)
 

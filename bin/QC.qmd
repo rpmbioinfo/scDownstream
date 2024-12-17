@@ -26,6 +26,8 @@ params:
   clustering1_res: 0.8
   doublet_removal: true
   doublet_confidence: "all"
+  sketch_n: 50000
+  sketch_cells: true
 ---
 
 
@@ -61,6 +63,7 @@ source("run_funcs.R")
 
 plotLS <- list()
 
+options(future.globals.maxSize = 12 * 1024^3)
 
 knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width=9)
 
@@ -71,6 +74,8 @@ knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.al
 run_gex <- FALSE
 run_atac <- FALSE
 run_adt <- FALSE
+sketch <- params$sketch_cells
+
 
 if(params$pipeline != "atac"){
   run_gex <- TRUE
@@ -80,7 +85,7 @@ if(params$pipeline %in% c("atac", 'multiome', 'teaseq')){
   run_atac <- TRUE
 }
 
-if(params$pipeline %in% c("cite", 'cite_crispr', 'teaseq')){
+if(params$pipeline %in% c("cite", 'teaseq')){
   run_adt <- TRUE
 }
 
@@ -97,9 +102,15 @@ df
 ## Load Data
 
 ```{r sample_LS}
-sample_LS <- list.files(pattern = "*_counts_seurat.RDS")
-#sample_LS <- list.files(path = "../results/seurat", pattern = "filtered.*_counts_seurat.RDS", full.names = T)
 
+sample_LS <- list.files(pattern = "*_seurat.RDS")
+#sample_LS <- list.files(path = "../results/seurat", pattern = "filtered.*_counts_seurat.RDS", full.names = T)
+count_ls <- list.files(".", pattern = ".*_matrix_BP.tar.gz")
+
+lapply(count_ls, function(x){
+  untar(x)
+})
+  
 
 seurat_ls <- lapply(sample_LS, function(x){
   tmp <- readRDS(x)
@@ -109,7 +120,7 @@ seurat_ls <- lapply(sample_LS, function(x){
 seurat <- merge(seurat_ls[[1]], y = seurat_ls[-1])
 rm(seurat_ls)
 
-seurat <- JoinLayers(seurat)
+#seurat <- JoinLayers(seurat)
 
 #params <- read(path = "../results/params.json")
 
@@ -219,10 +230,10 @@ qc_metric_plots$percent.mt
 `r if(run_atac){"## Chromatin Accessbility metrics"}`
 
 ```{r eval=run_atac, echo=run_atac & echo_set}
-
-
-fragLS <- list.files(pattern = "*_sample_fragments.tsv.gz$")
-names(fragLS) <- gsub("_sample_fragments.tsv.*", "", basename(fragLS)) 
+# 
+# 
+# fragLS <- list.files(pattern = "*_sample_fragments.tsv.gz$")
+# names(fragLS) <- gsub("_sample_fragments.tsv.*", "", basename(fragLS)) 
 
 
 DefaultAssay(seurat) <- "ATAC"
@@ -256,7 +267,7 @@ qc_metric_plots_atac <- sapply(c(log_qc, lin_qc), simplify = F, USE.NAMES = T, f
   
 })
 
-qc_metric_plots <- c(qc_metric_plots, qc_metric_plots_atac)
+qc_metric_plots <-  qc_metric_plots_atac
 
 
 qc_thresholds_atac <- list("nCount_ATAC" = list("upper" = params$nCount_ATAC_max, 'lower' = params$nCount_ATAC_min),
@@ -366,16 +377,7 @@ seurat <- seurat[, !(seurat$SampleID %in% sample_exclusion)]
 
 `r if (params$doublet_removal & params$pipeline != "atac") {"## Doublet Removal\nUsing Doublet Finder to find doublets on a per sample basis"}`
 
-```{r doublet_removal, eval=params$doublet_removal & params$pipeline != "atac", echo=params$doublet_removal & params$pipeline != "atac"  & echo_set, results='hide', fig.show = 'hide'1}
-DefaultAssay(seurat) <- "RNA"
-seurat <- FindVariableFeatures(seurat, verbose = F)
-seurat <- NormalizeData(seurat, verbose = F)
-seurat <- ScaleData(seurat, verbose = F)
-seurat <- RunPCA(seurat, verbose = F, npcs = params$umap1_ndims)
-
-seurat <- RunUMAP(seurat, dims = 1:params$umap1_ndims, verbose = F)
-seurat <- FindNeighbors(seurat, dims = 1:params$umap1_ndims, verbose = F)
-seurat <- FindClusters(seurat, resolution = params$clustering1_res, verbose = F)
+```{r eval=params$doublet_removal & params$pipeline != "atac" , echo=params$doublet_removal & params$pipeline != "atac"  & echo_set}
 
 
 doubl_find <- function(seurat, ndims){
@@ -384,6 +386,10 @@ doubl_find <- function(seurat, ndims){
   for(i in names(split_seurat)){
 
     tmp_seurat <- split_seurat[[i]]
+    tmp_seurat[["RNA"]]$counts <- as(object = tmp_seurat[["RNA"]]$counts, Class = "dgCMatrix")
+    tmp_seurat[["RNA"]]$data <- as(object = tmp_seurat[["RNA"]]$data, Class = "dgCMatrix")
+    tmp_seurat <- ScaleData(tmp_seurat)
+    tmp_seurat <- RunPCA(tmp_seurat, verbose = F, npcs = ndims)
     sweep.res <- paramSweep(tmp_seurat, PCs = 1:ndims, sct = F) 
     sweep.stats <- summarizeSweep(sweep.res, GT = FALSE) 
     bcmvn <- find.pK(sweep.stats) 
@@ -423,7 +429,72 @@ doubl_find <- function(seurat, ndims){
 
 }
 
+
+```
+
+
+```{r doublet_removal, eval=params$doublet_removal & params$pipeline != "atac" & !params$sketch_cells, echo=params$doublet_removal & params$pipeline != "atac"  & echo_set & !params$sketch_cells, results='hide', fig.show = 'hide'}
+DefaultAssay(seurat) <- "RNA"
+seurat <- NormalizeData(seurat, verbose = F)
+seurat <- FindVariableFeatures(seurat, verbose = F)
+
+seurat <- ScaleData(seurat, verbose = F)
+seurat <- RunPCA(seurat, verbose = F, npcs = params$umap1_ndims, reduction.name = "pca")
+
+seurat <- RunUMAP(seurat, dims = 1:params$umap1_ndims, verbose = F, reduction.name = "umap", reduction = "pca")
+seurat <- FindNeighbors(seurat, dims = 1:params$umap1_ndims, verbose = F, reduction = "pca")
+seurat <- FindClusters(seurat, resolution = params$clustering1_res, verbose = F)
+
+
 seurat <- doubl_find(seurat, ndims = params$umap1_ndims)
+
+```
+
+```{r doublet_removal_sketch, eval=params$doublet_removal & params$pipeline != "atac" & params$sketch_cells, echo=params$doublet_removal & params$pipeline != "atac"  & echo_set & params$sketch_cells, results='hide', fig.show = 'hide'}
+DefaultAssay(seurat) <- "RNA"
+
+seurat <- NormalizeData(seurat, verbose = F)
+seurat <- FindVariableFeatures(seurat, verbose = F)
+
+
+seurat <- SketchData(
+object = seurat,
+ncells = params$sketch_n,
+method = "LeverageScore",
+sketched.assay = "sketch", 
+verbose = F
+)
+
+DefaultAssay(seurat) <- "sketch"
+seurat <- FindVariableFeatures(seurat, verbose = F)
+seurat <- ScaleData(seurat, verbose = F)
+seurat <- RunPCA(seurat, verbose = F, npcs = params$umap1_ndims, reduction.name = "pca.sk")
+
+seurat <- RunUMAP(seurat, dims = 1:params$umap1_ndims, verbose = F, reduction.name = "umap.sk", reduction = "pca.sk")
+seurat <- FindNeighbors(seurat, dims = 1:params$umap1_ndims, verbose = F, reduction = "pca.sk")
+seurat <- FindClusters(seurat, resolution = params$clustering1_res, verbose = F)
+  
+
+  
+seurat <- ProjectData(
+  object = seurat,
+  assay = "RNA",
+  full.reduction = "pca",
+  sketched.assay = "sketch",
+  sketched.reduction = "pca.sk",
+  dims = 1:params$umap1_ndims,
+  refdata = list(cluster_full = "seurat_clusters")
+)
+
+DefaultAssay(seurat) <- "RNA"
+seurat <- RunUMAP(seurat, dims = 1:params$umap1_ndims, verbose = F, reduction.name = "umap", reduction = "pca")
+seurat$seurat_clusters <- seurat$cluster_full
+Idents(seurat) <- "seurat_clusters"
+
+
+
+seurat <- doubl_find(seurat, ndims = params$umap1_ndims)
+
 ```
 
 ```{r doublet_removal_plot, eval=params$doublet_removal & params$pipeline != "atac", echo=params$doublet_removal & params$pipeline != "atac"  & echo_set}
@@ -436,43 +507,6 @@ if(params$doublet_confidence == "all"){
   seurat <- subset(seurat, subset = doubletFinder_classification %in% c("Singlet", 'Doublet - Low Confidence'))
 }
 
-
-
-```
-
-
-```{r echo=F}
-peak_call_blurb <- "## Peak Calling\nNow that we have isolated good viable cells, we need to rerun peak calling to isolate true peaks that are not derived from noise."
-
-
-```
-
-`r if(run_atac){peak_call_blurb}`
-
-```{r call_peaks, eval=run_atac, echo=run_atac & echo_set}
-DefaultAssay(seurat) <- "ATAC"
-
-fragpaths <- lapply(seq(1:length(seurat@assays$ATAC@fragments)), function(x){
-  fp <- basename(seurat@assays$ATAC@fragments[[x]]@path)
-})
-
-
-
-
-dir.create("new_peaks")
-peaks <- CallPeaks(object = seurat, 
-                   outdir = "new_peaks" )
-
-frags <- seurat@assays$ATAC@fragments
-peak_matr <- FeatureMatrix(fragments = frags, features = peaks)
-
-annotation <- Annotation(seurat)
-
-seurat[["ATAC"]] <- CreateChromatinAssay(counts = peak_matr   ,
-              sep = c(":", "-"),
-              fragments = frags,
-              annotation = annotation)
-rm(peak_matr)
 
 
 ```

@@ -4,10 +4,13 @@ params:
   pipeline: "multiome"
   integrate_datasets: TRUE
   integration_method: "CCA"
-  integrate_by: "Project"
+  integrate_by: "SampleID"
   view_batch: ['Group', 'Project', "Genomics Core Folder"]
   umap2_ndims: 30
   first_lsi_pc: 2
+  sketch_cells: true
+  sketch_n: 5000
+  rna_normalization_method: 'log'
 ---
 
 ## Dataset Integration
@@ -41,6 +44,7 @@ if(knitr::is_html_output()){
 
 source("run_funcs.R")
 
+options(future.globals.maxSize = 12 * 1024^3)
 
 knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width = 10, cache.lazy = F)
 
@@ -93,7 +97,7 @@ We will first attempt to visualize potential batch effects to decide whether we 
 `r if(run_gex){"### RNA Batch"}`
 ```{r eval=run_gex, echo=run_gex & echo_set }
 for(i in params$view_batch){
-  print(DimPlot(seurat, group.by = "SampleID", split.by = i, reduction = 'umap.rna' , label = T, repel = T) + NoLegend())
+  print(DimPlot(seurat, group.by = "SampleID", split.by = i, reduction = 'umap.rna' , label = T, repel = T, raster = T) + NoLegend())
 }
 
 
@@ -108,29 +112,196 @@ integrate_blurb <- paste0("#### RNA Batch Integration\nPipeline set to `integrat
 
 
 `r if(run_gex & params$integrate_datasets){integrate_blurb}`
-```{r eval=run_gex & params$integrate_datasets, echo=run_gex & params$integrate_datasets & echo_set}
+```{r int_rna_sketch, eval=run_gex & params$integrate_datasets & params$sketch_cells, echo=run_gex & params$integrate_datasets & echo_set & params$sketch_cells}
 
-if(params$integration_method == "CCA"){
-  intMeth <- CCAIntegration
-} else if(params$integration_method == "RPCA"){
-   intMeth <- RPCAIntegration
-} else if(params$integration_method == "Harmony"){
-   intMeth <- HarmonyIntegration
-} else if(params$integration_method == "FastMNN"){
-   intMeth <- FastMNNIntegration
-} 
+
+intMeth <- switch(
+  params$integration_method,
+  CCA = CCAIntegration,
+  RPCA = RPCAIntegration,
+  Harmony = HarmonyIntegration,
+  stop("Invalid integration method specified.")
+)
+
+
+
+
+if (!params$integrate_by %in% colnames(seurat[[]])) {
+  stop(paste0("The variable ", params$integrate_by, " was not found in the Seurat object metadata and cannot be used for integration. Aborting."))
+}
+
+seurat <- JoinLayers(seurat, assay = "RNA")
+seurat <- JoinLayers(seurat, assay = "sketch")
+
+
+assay_sel <- "RNA"
+assay_sel_sketch <- "sketch"
+norm_method <- "LogNormalize"
+DefaultAssay(seurat) <- assay_sel
+features <- NULL
+
+
+int_assay <- assay_sel_sketch
+
 
 int_factor <- setNames(seurat[[params$integrate_by]][,1],colnames(seurat))
 
+mem_int_meths <- c("CCA")
+if(params$integration_method %in% mem_int_meths & params$rna_normalization_method == "log"){
+  new_assay <- paste0(assay_sel_sketch,"_od")
+  int_assay <- new_assay
+  seurat[[new_assay]] <- seurat[[assay_sel_sketch]]
+  seurat[[new_assay]]$data <- as(object = seurat[[new_assay]]$data, Class = "dgCMatrix")
+  seurat <- ScaleData(seurat, assay = int_assay, verbose = F)
+
+  #seurat[[new_assay]]$counts <- as(object = seurat[[new_assay]]$counts, Class = "dgCMatrix")
+} else if(params$integration_method %in% mem_int_meths & params$rna_normalization_method == "sct"){
+  stop(paste0("Cannot use ", params$integration_method, " with SCT normalization. Use another method, such as RPCA or Harmony"))
+}
 
 
 
-DefaultAssay(seurat) <- 'RNA'
-seurat[['RNA']] <- split(seurat[['RNA']], f = int_factor )
+#DefaultAssay(seurat) <- int_assay
+seurat[[int_assay]] <- split(seurat[[int_assay]], f = int_factor )
+seurat[[assay_sel]] <- split(seurat[[assay_sel]], f = int_factor )
+
+
+
+if(params$rna_normalization_method == "sct"){
+    DefaultAssay(seurat) <- assay_sel
+    seurat <- SCTransform(seurat, assay = assay_sel, verbose = F, new.assay.name = "SCT")
+    seurat <- SCTransform(seurat, assay = assay_sel_sketch, verbose = F, new.assay.name = "SCT_sketched")
+    
+    assay_sel <- "SCT"
+    assay_sel_sketch <- "SCT_sketched"
+    norm_method <- "SCT"
+    int_assay <- assay_sel_sketch
+    
+    seurat[[assay_sel]] <- split(seurat[[assay_sel]], f = int_factor )
+    seurat[[int_assay]] <- split(seurat[[int_assay]], f = int_factor )
+    
+    features <- SelectIntegrationFeatures(list(seurat), assay = assay_sel)
+} 
+
+
+DefaultAssay(seurat) <- int_assay
+
+seurat <- IntegrateLayers(object = seurat, 
+                        method = intMeth,
+                        orig.reduction = "pca.sk", 
+                        new.reduction = "integrated.rna.sk",
+                        assay = int_assay,
+                        features = features,
+                        #normalization.method = norm_method,
+                        verbose = FALSE)
+
+seurat <- RunUMAP(seurat, 
+                  reduction = 'integrated.rna.sk', 
+                  dims = 1:params$umap2_ndims, 
+                  reduction.name = 'umap.rna.int.sk',
+                  verbose = F)
+
+seurat <- ProjectIntegration(object = seurat, 
+                             sketched.assay = int_assay, 
+                             assay = assay_sel, 
+                             reduction = "integrated.rna.sk",
+                             reduction.name = "integrated.rna",
+                             verbose = F)
+
+seurat <- ProjectData(object = seurat, 
+                      sketched.assay = int_assay, 
+                      assay = assay_sel, 
+                      sketched.reduction = "integrated.rna.sk",
+                      full.reduction = "integrated.rna", 
+                      dims = 1:params$umap2_ndims,
+                      verbose = F)
+
+
+DefaultAssay(seurat) <- assay_sel
+
+seurat <- RunUMAP(seurat, 
+                  reduction = 'integrated.rna', 
+                  dims = 1:params$umap2_ndims, 
+                  reduction.name = 'umap.rna.int',
+                  verbose = F)
+
+
+
+seurat <- JoinLayers(seurat, assay = assay_sel)
+seurat <- JoinLayers(seurat, assay = assay_sel_sketch)
+
+DefaultAssay(seurat) <- "RNA"
+
+if(params$integration_method %in% mem_int_meths & params$rna_normalization_method == "log"){
+  seurat[[int_assay]] <- NULL
+
+}
+
+p1 <- DimPlot(seurat, group.by = params$integrate_by, reduction = 'umap.rna' , raster = T) + ggtitle("Non integrated RNA")
+p2 <- DimPlot(seurat, group.by = params$integrate_by, reduction = 'umap.rna.int' , raster = T) + ggtitle("Integrated RNA")
+
+( p1 | p2 ) + plot_layout(guides = "collect")
+```
+
+```{r eval=run_gex & params$integrate_datasets & !params$sketch_cells, echo=run_gex & params$integrate_datasets & echo_set & !params$sketch_cells}
+
+intMeth <- switch(
+  params$integration_method,
+  CCA = CCAIntegration,
+  RPCA = RPCAIntegration,
+  Harmony = HarmonyIntegration,
+  stop("Invalid integration method specified.")
+)
+
+
+if (!params$integrate_by %in% colnames(seurat[[]])) {
+  stop("The metadata variable specified in integrate_by does not exist.")
+}
+
+if(params$rna_normalization_method == "sct"){
+    DefaultAssay(seurat) <- 'SCT'
+    assay_sel <- "SCT"
+    assay_sel_sketch <- "SCT_sketched"
+    norm_method <- "SCT"
+  } else {
+    DefaultAssay(seurat) <- 'RNA'
+    assay_sel <- "RNA"
+    int_assay <- assay_sel
+    assay_sel_sketch <- "sketch"
+    norm_method <- "LogNormalize"
+  }
+
+int_assay <- assay_sel
+
+
+int_factor <- setNames(seurat[[params$integrate_by]][,1],colnames(seurat))
+seurat <- JoinLayers(seurat, assay = assay_sel)
+
+
+mem_int_meths <- c("CCA")
+if(params$integration_method %in% mem_int_meths & params$rna_normalization_method == "log"){
+  new_assay <- paste0(assay_sel,"_od")
+  int_assay <- new_assay
+  seurat[[new_assay]] <- seurat[[assay_sel]]
+  #seurat[[new_assay]]$counts <- as(object = seurat[[new_assay]]$counts, Class = "dgCMatrix")
+  seurat[[new_assay]]$data <- as(object = seurat[[new_assay]]$data, Class = "dgCMatrix")
+  seurat <- ScaleData(seurat, assay = int_assay, verbose = F)
+  DefaultAssay(seurat) <- int_assay
+}
+
+seurat[[int_assay]] <- split(seurat[[int_assay]], f = int_factor )
+
+
+
+#CCA integration method does not work with on-disk matrices. so the matrix is converted to in memory storage for integration purposes
+
+
 seurat <- IntegrateLayers(object = seurat, 
                           method = intMeth,
                           orig.reduction = "pca", 
                           new.reduction = "integrated.rna",
+                          assay = int_assay,
+                          normalization.method = norm_method,
                           verbose = FALSE)
 seurat <- JoinLayers(seurat)
 
@@ -138,13 +309,17 @@ seurat <- JoinLayers(seurat)
 
 
 
-seurat <- RunUMAP(seurat, reduction = 'integrated.rna', dims = 1:params$umap2_ndims, reduction.name = 'umap.rna.int')
+seurat <- RunUMAP(seurat, reduction = 'integrated.rna', dims = 1:params$umap2_ndims, reduction.name = 'umap.rna.int', verbose = F)
 
 
-p1 <- DimPlot(seurat, group.by = params$integrate_by, reduction = 'umap.rna' ) + ggtitle("Non integrated RNA")
-p2 <- DimPlot(seurat, group.by = params$integrate_by, reduction = 'umap.rna.int' ) + ggtitle("Integrated RNA")
+p1 <- DimPlot(seurat, group.by = params$integrate_by, reduction = 'umap.rna', raster = T ) + ggtitle("Non integrated RNA")
+p2 <- DimPlot(seurat, group.by = params$integrate_by, reduction = 'umap.rna.int' , raster = T) + ggtitle("Integrated RNA")
 
 ( p1 | p2 ) + plot_layout(guides = "collect")
+
+if(params$integration_method %in% mem_int_meths & params$rna_normalization_method == "log"){
+ seurat[[int_assay]] <- NULL 
+}
 ```
 
 

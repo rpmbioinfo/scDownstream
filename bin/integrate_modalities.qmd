@@ -5,6 +5,8 @@ params:
   umap2_ndims: 30
   first_lsi_pc: 2
   integrate_datasets: true
+  sketch_cells: true
+  sketch_n: 5000
   
 ---
 
@@ -37,7 +39,7 @@ if(knitr::is_html_output()){
 }
 
 source("run_funcs.R")
-
+options(future.globals.maxSize = 12 * 1024^3)
 
 knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width = 10, cache.lazy = F)
 
@@ -51,7 +53,8 @@ run_adt <- FALSE
 
 multimodal <- FALSE
 
-if(params$pipeline %in% c("cite", 'cite_crispr', 'multiome', 'teaseq')){
+assayLS <- c()
+if(params$pipeline %in% c("cite", 'multiome', 'teaseq')){
   multimodal <- TRUE
 }
 
@@ -63,9 +66,60 @@ if(params$pipeline %in% c("atac", 'multiome', 'teaseq')){
   run_atac <- TRUE
 }
 
-if(params$pipeline %in% c("cite", 'cite_crispr', 'teaseq')){
+if(params$pipeline %in% c("cite", 'teaseq')){
   run_adt <- TRUE
 }
+
+```
+
+```{r echo = echo_set}
+
+
+
+fetch_reduction <- function(pipeline = params$pipeline, sketched = params$sketch_cells, integrated = params$integrate_datasets){
+  assay_dict <-  list(
+                    "multiome" = c("RNA", "ATAC"),
+                    "teaseq" = c("RNA", "ATAC", "ADT"),
+                    "rna" = c("RNA"),
+                    "atac" = c("ATAC"),
+                    "cite" = c("RNA", "ADT")
+                  )
+  reductLS <- list("RNA" = list("full" = list("raw" = list("PCA" = "pca", "UMAP" = "umap.rna"),
+                                            "integrated" = list("PCA" = "integrated.rna", "UMAP" = "umap.rna.int")),
+                               "sketched" = list("raw" = list("PCA" = "pca.sk", "UMAP" = "umap.sk"),
+                                                  "integrated" = list("PCA" = "integrated.rna.sk", "UMAP" = "umap.rna.int.sk")),
+                               "dims" = 1:params$umap2_ndims),
+                 "ATAC" = list("full" = list("raw" = list("PCA" = "lsi", "UMAP" = "umap.atac"),
+                                            "integrated" = list("PCA" = "integrated_lsi", "UMAP" = "umap.atac")),
+                               "sketched" = list("raw" = list("PCA" = "lsi", "UMAP" = "umap.atac"),
+                                            "integrated" = list("PCA" = "integrated_lsi", "UMAP" = "umap.atac")),
+                                "dims" = params$first_lsi_pc:30),
+                 "ADT" = list("full" = list("raw" = list("PCA" = "apca", "UMAP" = "umap.atac"),
+                                            "integrated" = list("PCA" = "integrated.adt", "UMAP" = "umap.adt.int")),
+                              "sketched" = list("raw" = list("PCA" = "lsi", "UMAP" = "umap.atac"),
+                                            "integrated" = list("PCA" = "integrated_lsi", "UMAP" = "umap.adt")),
+                              "dims" = 1:20))
+  
+  sketch_val <- if (sketched) "sketched" else "full"
+  int_val <- if (integrated) "integrated" else "raw"
+  
+  assay <- assay_dict[[pipeline]]
+  default_assay <- if(sketched) "sketch" else assay[1]
+  
+  result <- list( "PCA" = as.list(unique(unlist(lapply(assay, function(a) reductLS[[a]][[sketch_val]][[int_val]][["PCA"]])))),
+                  "UMAP" = as.list(unique(unlist(lapply(assay, function(a) reductLS[[a]][[sketch_val]][[int_val]][["UMAP"]])))),
+                  "dims" = lapply(assay, function(a) reductLS[[a]][["dims"]]),
+                  "assays" = assay,
+                  "default_assay" = default_assay)
+  
+  return(result)
+  
+}
+
+
+
+
+reduct_pca <- fetch_reduction( sketched = F)
 
 ```
 
@@ -89,19 +143,15 @@ wnn_blurb <- "### Multimodal Integration\nSeurat objects with multiple modalitie
 ```
 
 `r if(multimodal){wnn_blurb}`
-```{r eval=params$pipeline == "multiome", echo=params$pipeline == "multiome" & echo_set}
+```{r echo=echo_set}
 
 
-DefaultAssay(seurat) <- 'RNA'
-if(params$integrate_datasets){
-  seurat <- FindMultiModalNeighbors(seurat, 
-                                  reduction.list = list("integrated.rna", "integrated_lsi"), 
-                                  dims.list = list(1:params$umap2_ndims, params$first_lsi_pc:30))
-} else {
-   seurat <- FindMultiModalNeighbors(seurat, 
-                                  reduction.list = list("pca", "lsi"), 
-                                  dims.list = list(1:params$umap2_ndims, params$first_lsi_pc:30))
-}
+DefaultAssay(seurat) <- reduct_pca$default_assay
+
+seurat <- FindMultiModalNeighbors(seurat, 
+                                reduction.list = reduct_pca$PCA, 
+                                dims.list = reduct_pca$dims)
+
 
 
 seurat <- RunUMAP(seurat, 
@@ -111,53 +161,6 @@ seurat <- RunUMAP(seurat,
 
 ```
 
-```{r eval=params$pipeline == "teaseq", echo=params$pipeline == "teaseq" & echo_set}
-
-
-DefaultAssay(seurat) <- 'RNA'
-if(params$integrate_datasets){
-  seurat <- FindMultiModalNeighbors(seurat, 
-                                  reduction.list = list("integrated.rna", "integrated_lsi", "integrated.adt"), 
-                                  dims.list = list(1:params$umap2_ndims, params$first_lsi_pc:30, 1:20))
-} else {
-   seurat <- FindMultiModalNeighbors(seurat, 
-                                  reduction.list = list("pca", "lsi", 'apca'), 
-                                  dims.list = list(1:params$umap2_ndims, params$first_lsi_pc:30, 1:20))
-}
-
-
-seurat <- RunUMAP(seurat, 
-                  nn.name = "weighted.nn", 
-                  reduction.name = "wnn.umap", 
-                  reduction.key = "wnnUMAP_")
-
-
-
-```
-
-```{r eval=params$pipeline %in% c("cite", 'cite_crispr'), echo=params$pipeline %in% c("cite", 'cite_crispr') & echo_set}
-
-
-DefaultAssay(seurat) <- 'RNA'
-if(params$integrate_datasets){
-  seurat <- FindMultiModalNeighbors(seurat, 
-                                  reduction.list = list("integrated.rna", "integrated.adt"), 
-                                  dims.list = list(1:params$umap2_ndims, 1:20))
-} else {
-   seurat <- FindMultiModalNeighbors(seurat, 
-                                  reduction.list = list("pca", 'apca'), 
-                                  dims.list = list(1:params$umap2_ndims, 1:20))
-}
-
-
-seurat <- RunUMAP(seurat, 
-                  nn.name = "weighted.nn", 
-                  reduction.name = "wnn.umap", 
-                  reduction.key = "wnnUMAP_")
-
-
-
-```
 
 ```{r eval=multimodal, echo=multimodal & echo_set}
 DimPlot(seurat, group.by = "SampleID", reduction = 'wnn.umap', raster = T ) + ggtitle("wNN Integration")

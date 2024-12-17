@@ -1,0 +1,130 @@
+---
+params:
+  eval: true
+  pipeline: "multiome"
+  seurat: "file"
+---
+
+
+# Recall Peaks
+```{r setup, warning=F, message=F, echo=knitr::is_html_output(), eval=T}
+
+selected_packages <- c("Seurat",
+                       "Signac",
+                       "biovizBase",
+                       'tidyverse',
+                       'DoubletFinder',
+                       'readxl')
+#invisible(extrafont::font_import(prompt = F))
+selected_font <- "Arial"
+selected_font_pdf <- "ArialMT"
+#extrafont::loadfonts(device = "win")
+invisible(lapply(selected_packages, library, character.only = TRUE))
+
+
+if(knitr::is_html_output()){
+  eval_set <- TRUE
+  eval_pdf <- FALSE
+  echo_set <- TRUE
+  message_set <- FALSE
+} else {
+  eval_set <- FALSE
+  eval_pdf <- TRUE
+  echo_set <- FALSE
+  message_set <- FALSE
+}
+
+source("run_funcs.R")
+
+plotLS <- list()
+
+options(future.globals.maxSize = 12 * 1024^3)
+
+knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width=9)
+
+```
+
+```{r echo=F}
+
+
+
+if(params$pipeline != "atac"){
+  run_gex <- TRUE
+}
+
+if(params$pipeline %in% c("atac", 'multiome', 'teaseq')){
+  run_atac <- TRUE
+}
+
+if(params$pipeline %in% c("cite", 'teaseq')){
+  run_adt <- TRUE
+}
+
+```
+
+## Analysis Parameters
+```{r echo=FALSE}
+
+df <- params_to_df(params)
+
+df
+```
+
+## Load Data
+```{r }
+seurat <- readRDS(params$seurat)
+
+```
+
+
+## Peak Calling
+Now that we have isolated good viable cells, we rerun peak calling to isolate true peaks that are not derived from noise.
+
+```{r call_peaks, echo= echo_set}
+DefaultAssay(seurat) <- "ATAC"
+
+fragpaths <- lapply(seq(1:length(seurat@assays$ATAC@fragments)), function(x){
+  fp <- basename(seurat@assays$ATAC@fragments[[x]]@path)
+})
+
+
+
+
+dir.create("new_peaks")
+peaks <- CallPeaks(object = seurat, 
+                   outdir = "new_peaks" )
+
+frags <- seurat@assays$ATAC@fragments
+peak_matr <- FeatureMatrix(fragments = frags, features = peaks)
+
+
+peak_matr <- seurat@assays$ATAC$counts
+peak_summary <- data.frame(peaks = row.names(peak_matr)) %>%
+                  mutate(chr = str_extract(peaks, pattern = "chr[0-9A-Za-z]+")) %>%
+                  dplyr::filter(!is.na(chr)) %>%
+                  group_by(chr) %>%
+                  summarise(n = n()) %>%
+                  ungroup() %>%
+                  mutate(chrnum = gsub("chr", "", chr)) %>%
+                  mutate(chrnum = ifelse(is.na(as.numeric(chrnum)), 100, as.numeric(chrnum))) %>%
+                  dplyr::arrange(chrnum) %>%
+                  dplyr::select(-chrnum)
+
+knitr::kable(peak_summary, caption = "New peak matrix per chromosome summary")
+
+annotation <- Annotation(seurat)
+
+seurat[["ATAC"]] <- CreateChromatinAssay(counts = peak_matr ,
+              sep = c(":", "-"),
+              fragments = frags,
+              annotation = annotation)
+rm(peak_matr)
+
+
+```
+
+```{r }
+
+
+saveRDS(seurat, "seurat_new_peaks.RDS")
+```

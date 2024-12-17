@@ -2,14 +2,18 @@
 
 ## Description
 
-Malaria
+Generic description
 
 ## Data
 Multiome
 
 ## Goals
 
-1. Malaria Multiome
+1. Quality Control
+2. Dimension reduction
+3. Clustering
+4. Identify TF motifs
+5. Cell-cell interactome
 
 ## Strategy
 

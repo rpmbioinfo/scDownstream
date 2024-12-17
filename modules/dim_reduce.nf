@@ -14,6 +14,8 @@ process DIMENSION_REDUCTION {
     val umap2_ndims
     val first_lsi_pc
     val rna_normalization_method
+    val sketch_cells
+    val sketch_n
  
 
     output:
@@ -29,7 +31,9 @@ process DIMENSION_REDUCTION {
                     -P pipeline:"${pipeline}" \
                     -P umap2_ndims:${umap2_ndims} \
                     -P first_lsi_pc:${first_lsi_pc} \
-                    -P rna_normalization_method:"${rna_normalization_method}"
+                    -P rna_normalization_method:"${rna_normalization_method}" \
+                    -P sketch_cells:"${sketch_cells}" \
+                    -P sketch_n:"${sketch_n}"
 
     bash chapter_package.sh "${rmd.baseName}"
     """

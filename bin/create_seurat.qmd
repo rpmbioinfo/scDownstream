@@ -1,0 +1,250 @@
+---
+params:
+  pipeline: "multiome"
+  sample: "test"
+  matrix_sel: "filtered"
+  annotation: ""
+  eval: true
+---
+
+# Create Seurat
+```{r setup, include=FALSE}
+
+suppressPackageStartupMessages(library(Seurat))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(Signac))
+suppressPackageStartupMessages(library(BPCells))
+
+
+
+if(knitr::is_html_output()){
+  eval_set <- TRUE
+  eval_pdf <- FALSE
+  echo_set <- TRUE
+  message_set <- FALSE
+} else {
+  eval_set <- FALSE
+  eval_pdf <- TRUE
+  echo_set <- FALSE
+  message_set <- FALSE
+}
+
+source("run_funcs.R")
+
+
+knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width=9)
+```
+
+
+```{r echo=F}
+
+run_gex <- FALSE
+run_atac <- FALSE
+run_adt <- FALSE
+
+
+if(params$pipeline != "atac"){
+  run_gex <- TRUE
+}
+
+if(params$pipeline %in% c("atac", 'multiome', 'teaseq')){
+  run_atac <- TRUE
+}
+
+if(params$pipeline %in% c("cite", 'teaseq')){
+  run_adt <- TRUE
+}
+
+```
+
+## Analysis Parameters
+```{r echo=FALSE}
+
+df <- params_to_df(params)
+
+df
+```
+
+
+
+## Create object
+H5 objects from preprocessing will be converted to bitpacked matrices when possible to generate on-disk matrices for lighter and faster Seurat objects.
+
+This is performed for **all samples** in parallel, but this **report only displays one sample**. 
+
+
+```{r eval=eval_set}
+
+annotations <- readRDS(params$annotation)
+convert_matrix <- function(h5,
+                           sample = params$sample,
+                           pipeline, 
+                           fragpath ="atac_fragments.tsv.gz", 
+                           barcode_metrics = "per_barcode_metrics.csv" ){
+  
+  pipeline_dirs <- list()
+  counts_10x <- Read10X_h5(h5)
+  
+  
+  
+  if(pipeline %in% c('multiome', 'teaseq', 'atac')){
+
+    peaks_mat_dir <- file.path(sample, "matrix_dir_ATAC")
+
+    pipeline_dirs$fragments <- fragpath
+    pipeline_dirs$Peaks <- counts_10x$Peaks
+  }
+
+  if(pipeline %in% c("cite", "crispr", "cite_crispr", 'rna', 'multiome', 'teaseq')){
+
+    gex_mat_dir <- file.path(sample, "matrix_dir_RNA")
+    write_matrix_dir(convert_matrix_type(counts_10x$`Gene Expression`), 
+                       dir = gex_mat_dir)
+    
+    pipeline_dirs$RNA <- gex_mat_dir
+
+  }
+
+  if(pipeline %in% c("cite", 'cite_crispr')){
+    adt_mat_dir <- file.path(sample, "matrix_dir_ADT")
+    write_matrix_dir(convert_matrix_type(counts_10x$`Antibody Capture`), 
+                     dir = adt_mat_dir)
+    pipeline_dirs$ADT <- adt_mat_dir
+  }
+    
+  if(pipeline %in% c('crispr', 'cite_crispr')){
+
+    crispr_mat_dir <- file.path(sample, "matrix_dir_CRISPR")
+    write_matrix_dir(convert_matrix_type(counts_10x$`CRISPR Guide Capture`), 
+                     dir = crispr_mat_dir)
+    pipeline_dirs$CRISPR <- crispr_mat_dir
+  }
+
+
+  if(pipeline %in% c("multiome", "teaseq")){
+      barcode_metric_df <- read.table(barcode_metrics, 
+                         stringsAsFactors = FALSE,
+                         sep = ",",
+                         header = TRUE,
+                         row.names = NULL) %>%
+                        dplyr::select(barcode, is_cell, atac_fragments, atac_peak_region_fragments) 
+      barcode_file <- file.path(sample, "barcode_df.csv")
+      write_csv(barcode_metric_df, file = barcode_file )
+      pipeline_dirs$barcode_df <- barcode_metric_df
+      #pipeline_dirs <- c(pipeline_dirs, barcode_file)
+  }
+  return(pipeline_dirs)
+}
+
+```
+
+```{r eval=eval_set}
+
+if(params$pipeline %in% c("multiome", "cite", "crispr", "cite_crispr", "teaseq", 'rna')){
+  raw_h5_file <- "raw_feature_bc_matrix.h5"
+  filtered_h5_file <- "filtered_feature_bc_matrix.h5"
+  
+} else if(params$pipeline == "atac" ){
+  raw_h5_file <- "raw_peak_bc_matrix.h5"
+  filtered_h5_file <- "filtered_peak_bc_matrix.h5"
+  
+}
+
+if(params$matrix_sel == "filtered"){
+  h5_file <- filtered_h5_file
+} else {
+  h5_file <- raw_h5_file
+}
+
+bp_dirs <- convert_matrix(h5 = h5_file,
+                          sample = params$sample,
+                           pipeline = params$pipeline,
+                           fragpath = file.path(params$sample,paste0(params$sample, "_sample_fragments.tsv.gz")))
+
+
+```
+
+
+```{r eval=eval_set}
+
+
+
+if(params$pipeline != "atac"){
+  tmp <- list()
+  mat_rna <- open_matrix_dir(bp_dirs$RNA)
+
+  seurat <- CreateSeuratObject(
+                counts = mat_rna,
+                assay = "RNA")
+}
+
+if(params$pipeline %in% c("atac", 'multiome', 'teaseq')){
+  chrom_assay <- CreateChromatinAssay(
+                    counts = bp_dirs$Peaks,
+                    sep = c(":", "-"),
+                    fragments = bp_dirs$fragments,
+                    min.cells = 10,
+                    min.features = 200,
+                    annotation = annotations)
+  if(params$pipeline == "atac"){
+    seurat <- CreateSeuratObject(
+                  counts = chrom_assay,
+                  assay = "ATAC")
+  } else {
+    seurat[['ATAC']] <- chrom_assay
+  }
+} 
+
+if(params$pipeline %in% c("cite", 'cite_crispr', 'teaseq')){
+  mat_adt <- open_matrix_dir(bp_dirs$ADT)
+  seurat[['ADT']] <- CreateAssay5Object(counts = mat_adt)
+}
+
+if(params$pipeline %in% c("crispr", 'cite_crispr')){
+  mat_crispr <- open_matrix_dir(bp_dirs$CRISPR)
+  seurat[['CRISPR']] <- CreateAssay5Object(counts = mat_crispr)
+}
+
+
+if(params$pipeline %in% c("atac", "multiome", "teaseq")){
+  DefaultAssay(seurat) <- "ATAC"
+  
+  total_fragments <- CountFragments(bp_dirs$fragments)
+  rownames(total_fragments) <- total_fragments$CB
+  seurat$fragments <- total_fragments[colnames(seurat), "frequency_count"]
+  
+  seurat <- FRiP(
+              object = seurat,
+              assay = 'ATAC',
+              total.fragments = 'fragments'
+  )
+  
+  
+  seurat <- NucleosomeSignal(seurat)
+  seurat <- TSSEnrichment(seurat, fast = F)
+  
+
+  if(params$pipeline %in% c("multiome", "teaseq")){
+    
+    DefaultAssay(seurat) <- "RNA"
+    metadata_df <- bp_dirs$barcode_df %>%
+                    column_to_rownames("barcode")
+    seurat <- AddMetaData(seurat, metadata = metadata_df)
+  }
+}
+seurat$SampleID <- params$sample
+
+saveRDS(seurat, paste0(params$sample, "_seurat.RDS"))
+```
+
+
+```{r package, eval=eval_set}
+
+
+tar(tarfile = paste0(params$sample,"_matrix_BP.tar.gz"), files = c(params$sample), compression = "gzip")
+
+
+```
+
+
+

@@ -9,11 +9,13 @@ params:
   run_singler: true
   singler_reference: 'monaco_immune'
   run_scimilarity: false
-  scimilarity_reference: 'path/to/model_v1.1'
+  scimilarity_reference: "/home/adampelletier/Documents/bioinformatic_assets/singlecell_refs/scimilarity/model_v1.1.tar.gz"
   selected_method: 'azimuth'
   markers_rna:  ["FOXP3", "TBX21", "CD38", "CCR7", "KLRB1","KLRD1", "CD3E", "CD8B", "CD79A", "CD19", "CD1C", "CD14", "FCGR3A", "NCAM1", "MS4A1","CD3D", "LILRA4","IL3RA","CD4", "CD8A" , "GATA3", "IL7R", "ID2", "ZBTB46", "CLEC9A", "BATF3", "IL2RA", "CD27", "HLA-DRB1", "PRF1", "GZMB", "SDC1", "THBD", "IGHM", "IGHD"]
   markers_adt: ["CD3E", "CD4", "CD8", 'CD14', 'CD16', 'CD56', 'CD1C', 'CD19']
   outcomes: "none"
+  sketch_cells: true
+  celltype_dictionary: "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/genomes/cell_annotations/scimilarity/scimilarity_dictionary.tsv"
 ---
 
 ## Cell Annotation
@@ -29,7 +31,8 @@ selected_packages <- c("Seurat",
                        'SingleR',
                        'celldex',
                        'SeuratData',
-                       'DT')
+                       'DT',
+                       'Matrix')
 #invisible(extrafont::font_import(prompt = F))
 selected_font <- "Arial"
 selected_font_pdf <- "ArialMT"
@@ -51,7 +54,7 @@ if(knitr::is_html_output()){
 
 source("run_funcs.R")
 
-knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width = 10, cache.lazy = F)
+knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width = 11, fig.height = 8, cache.lazy = F)
 
 options(future.globals.maxSize = 8000 * 1024^2)
 ```
@@ -99,8 +102,52 @@ if(params$pipeline %in% c("cite", 'cite_crispr', 'teaseq')){
 
 azimuth_logical <- params$run_azimuth
 singler_logical <- params$run_singler
-scimilarity_logical <- params$scimilarity_logical
+scimilarity_logical <- params$run_scimilarity
 atac_logical <- params$pipeline == "atac"
+```
+
+```{r }
+
+
+get_reductions <- function(pipeline = params$pipeline, sketched = params$sketch_cells, integrated = params$integrate_datasets){
+  assay_dict <-  list(
+                    "multiome" = c("RNA", "ATAC"),
+                    "teaseq" = c("RNA", "ATAC", "ADT"),
+                    "rna" = c("RNA"),
+                    "atac" = c("ATAC"),
+                    "cite" = c("RNA", "ADT")
+                  )
+  reductLS <- list("RNA" = list("full" = list("raw" = list("PCA" = "pca", "UMAP" = "umap.rna"),
+                                            "integrated" = list("PCA" = "integrated.rna", "UMAP" = "umap.rna.int"))),
+                 "ATAC" = list("full" = list("raw" = list("PCA" = "lsi", "UMAP" = "umap.atac"),
+                                            "integrated" = list("PCA" = "integrated_lsi", "UMAP" = "umap.atac"))),
+                 "ADT" = list("full" = list("raw" = list("PCA" = "apca", "UMAP" = "umap.atac"),
+                                            "integrated" = list("PCA" = "integrated.adt", "UMAP" = "umap.adt.int"))),
+                 "WNN" = "wnn.umap")
+  
+  sketch_val <- if (sketched) "sketched" else "full"
+  int_val <- if (integrated) "integrated" else "raw"
+  
+  assay <- assay_dict[["rna"]]
+  default_assay <- if(sketched) "sketch" else assay[1]
+  
+  result <- list( "PCA" = reductLS[["RNA"]][[sketch_val]][[int_val]][["PCA"]],
+                  "UMAP" = reductLS[["RNA"]][[sketch_val]][[int_val]][["UMAP"]])
+  if(!pipeline %in% c("rna", "atac")){
+    result <- c(result, list("wnn" = reductLS[["WNN"]]))
+  }
+                  
+  
+  return(result)
+  
+}
+
+
+
+
+reduct_LS <- get_reductions( sketched = F)
+
+
 ```
 
 ## Analysis Parameters
@@ -162,7 +209,9 @@ p2 <- DimPlot(seurat,
               raster = T) + 
                   ggtitle("Cell types (Broad)") 
 
-p2 + p1
+p2
+p1
+
  
 DotPlot_Plus(seurat, 
             features = params$markers_rna, 
@@ -180,6 +229,10 @@ if(run_adt){
             ggtitle("Cell type markers (ADT)")
 }
 
+if(params$selected_method == 'azimuth'){
+  seurat$cell_type <- seurat$predicted.celltype.l2
+}
+
 ```
 
 `r if(azimuth_logical){"#### Azimuth annotation cell frequencies"}`
@@ -187,13 +240,13 @@ if(run_adt){
 
 if(params$outcomes == "none"){
   cellfreq_p_main <- cluster_frequency_plot(seurat,ident = "predicted.celltype.l1")  + ggtitle("Cell type (broad) frequencies per sample")
-  cellfreq_p_fine <- cluster_frequency_plot(seurat,ident = "predicted.celltype.l1")  + ggtitle("Cell type (broad) frequencies per sample")
-  cellfreq_df_main <- compute_ident_frequencies(seurat, ident = "predicted.celltype.l2")
+  cellfreq_p_fine <- cluster_frequency_plot(seurat,ident = "predicted.celltype.l1")  + ggtitle("Cell type (fine) frequencies per sample")
+  cellfreq_df_main <- compute_ident_frequencies(seurat, ident = "predicted.celltype.l1")
   cellfreq_df_fine <- compute_ident_frequencies(seurat, ident = "predicted.celltype.l2")
 } else {
   cellfreq_p_main <- cluster_frequency_plot(seurat,ident = "predicted.celltype.l1", split.by = params$outcomes)  + ggtitle("Cell type (broad) frequencies per sample")
-  cellfreq_p_fine <- cluster_frequency_plot(seurat,ident = "predicted.celltype.l1", split.by = params$outcomes)  + ggtitle("Cell type (broad) frequencies per sample")
-  cellfreq_df_main <- compute_ident_frequencies(seurat, ident = "predicted.celltype.l2", outcomes = params$outcomes)
+  cellfreq_p_fine <- cluster_frequency_plot(seurat,ident = "predicted.celltype.l2", split.by = params$outcomes)  + ggtitle("Cell type (fine) frequencies per sample")
+  cellfreq_df_main <- compute_ident_frequencies(seurat, ident = "predicted.celltype.l1", outcomes = params$outcomes)
   cellfreq_df_fine <- compute_ident_frequencies(seurat, ident = "predicted.celltype.l2", outcomes = params$outcomes)
 }
 
@@ -214,7 +267,7 @@ if(knitr::is_html_output()){
   
 } 
 
-subchunkify(cellfreq_p_main, 7, 10 )
+print(cellfreq_p_main)
 
 if(knitr::is_html_output()){
   datatable(cellfreq_df_fine,
@@ -231,8 +284,8 @@ if(knitr::is_html_output()){
   
 } 
 
+print(cellfreq_p_fine)
 
-subchunkify(cellfreq_p_fine, 7, 10 )
 
 ```
 
@@ -254,8 +307,12 @@ DefaultAssay(seurat) <- "RNA"
 
 ref_data <- fetchReference(params$singler_reference, "2024-02-26")
 
+seurat[['tmp_RNA']] <- seurat[["RNA"]]
+seurat[["tmp_RNA"]]$data <- as(object = seurat[["tmp_RNA"]]$data, Class = "dgCMatrix")
+
 if(params$annotation_resolution == 'cluster'){
-  labels.main <- SingleR(test = seurat@assays$RNA$data,
+  
+  labels.main <- SingleR(test = seurat@assays$tmp_RNA$data,
                          clusters = seurat$seurat_clusters,
                           ref = ref_data,
                           labels = ref_data@colData$label.main)
@@ -267,7 +324,7 @@ if(params$annotation_resolution == 'cluster'){
   labels.fine <- do.call("rbind", lapply(unique(labels.main$labels.main),function(x){
       ref_filt <- subset(ref_data, select = label.main == x)
       sub_seurat <- subset(seurat, subset = seurat_clusters %in% labels.main[labels.main$labels.main == x,]$cluster)
-      df <- as.data.frame(SingleR(test = sub_seurat@assays$RNA$data,
+      df <- as.data.frame(SingleR(test = sub_seurat@assays$tmp_RNA$data,
                                   ref = ref_filt,
                                   clusters = sub_seurat$seurat_clusters,
                                   labels = ref_filt@colData$label.fine)) %>%
@@ -286,7 +343,7 @@ if(params$annotation_resolution == 'cluster'){
                       column_to_rownames("cell")
 
 } else {
-  labels.main <- SingleR(test = seurat@assays$RNA$data,
+  labels.main <- SingleR(test = seurat@assays$tmp_RNA$data,
                           ref = ref_data,
                           labels = ref_data@colData$label.main)
   labels.main <- as.data.frame(labels.main) %>%
@@ -298,7 +355,7 @@ if(params$annotation_resolution == 'cluster'){
   labels.fine <- do.call("rbind", lapply(unique(labels.main$labels.main),function(x){
       ref_filt <- subset(ref_data, select = label.main == x)
       sub_seurat <- subset(seurat, cells = labels.main[labels.main$labels.main == x,]$cell)
-      df <- as.data.frame(SingleR(test = sub_seurat@assays$RNA$data,
+      df <- as.data.frame(SingleR(test = sub_seurat@assays$tmp_RNA$data,
                                   ref = ref_filt,
                                   labels = ref_filt@colData$label.fine)) %>%
                                   rownames_to_column("cell") %>%
@@ -342,12 +399,12 @@ p2 <- DimPlot(seurat,
               raster = T) + 
                   ggtitle("Cell types (Broad)") 
 
-p2 + p1
-
+p2
+p1
 
 DotPlot_Plus(seurat, 
             features = params$markers_rna, 
-            group.by = "predicted.celltype.l2", 
+            group.by = "labels.fine", 
             assay = "RNA",
             col.min = -1 ) +
             ggtitle("Cell type markers (RNA)")
@@ -355,11 +412,18 @@ DotPlot_Plus(seurat,
 if(run_adt){
   DotPlot_Plus(seurat, 
             features = params$markers_adt, 
-            group.by = "predicted.celltype.l2", 
+            group.by = "labels.fine", 
             assay = "ADT",
             col.min = -1 )  +
             ggtitle("Cell type markers (ADT)")
 }
+
+
+if(params$selected_method == "azimuth"){
+  seurat$cell_type <- seurat$predicted.celltype.l2
+}
+
+seurat[["tmp_RNA"]] <- NULL
 ```
 
 `r if(singler_logical){"#### SingleR annotation cell frequencies"}`
@@ -394,7 +458,8 @@ if(knitr::is_html_output()){
   
 } 
 
-subchunkify(cellfreq_p_main, 7, 10 )
+print(cellfreq_p_broad)
+
 
 if(knitr::is_html_output()){
   datatable(cellfreq_df_fine,
@@ -411,10 +476,263 @@ if(knitr::is_html_output()){
   
 } 
 
-subchunkify(cellfreq_p_fine, 7, 10 )
+print(cellfreq_p_fine)
 
 
 ```
+
+
+```{r echo=F}
+
+annot_blurb <- paste("### SCimilarity\nUsing [SCimilarity](https://genentech.github.io/scimilarity/index.html) for annotating cells at the single-cell level with the ", params$scimilarity_reference,
+                     "reference dataset. ")
+
+```
+
+
+`r if(scimilarity_logical){annot_blurb}`
+
+```{r eval=scimilarity_logical, echo=scimilarity_logical & echo_set}
+## this is a function similar to SeuratDisk's function, but works on multimodal data with integrated reductions, sketched cells and BPCell counts. 
+seurat_to_anndata <- function(seurat, reduction = "wnn.umap", sketched = params$sketch_cells, pipeline = params$pipeline){
+  require(Matrix)
+
+  #seurat_tmp <- seurat
+  if(sketched){
+    assay <- "sketch"
+    seurat <- subset(seurat, cells = colnames(seurat@assays$sketch$counts))
+  } else {
+   assay <- "RNA"
+   #seurat_tmp <- subset(seurat_tmp, cells = colnames(seurat@assays$sketch))
+   seurat[[assay]]$counts <- as(object = seurat[[assay]]$counts, Class = "dgCMatrix")
+   seurat[[assay]]$data <- as(object = seurat[[assay]]$data, Class = "dgCMatrix")
+  }
+
+  #return(seurat_tmp)
+   writeMM(seurat@assays[[assay]]$counts, file = "counts.mtx")
+   writeMM(seurat@assays[[assay]]$data, file = "data.mtx")
+   write.csv(data.frame(Feature=rownames(seurat@assays[[assay]]$counts)),
+          file = "features.csv", row.names = FALSE)
+   write.csv(data.frame(Barcode=colnames(seurat@assays[[assay]]$counts)),
+          file = "barcodes.csv", row.names = FALSE)
+   write.csv(seurat@meta.data, file = "seurat_metadata.csv")
+   umap_emb <- seurat@reductions[[reduction]]@cell.embeddings
+   colnames(umap_emb) <- c("UMAP1", "UMAP2")
+   write.csv(umap_emb, file = "umap.csv")
+   write.csv(as.data.frame(seurat$seurat_clusters), file = "clusters.csv")
+}
+
+
+seurat_to_anndata(seurat, sketched = F)
+untar(tarfile = params$scimilarity_reference)
+
+model_dir <- tools::file_path_sans_ext(tools::file_path_sans_ext(params$scimilarity_reference))
+
+scim_dict <- read_tsv(params$celltype_dictionary) %>%
+              dplyr::rename(scimilarity_cell_type_granular = 2, 
+                            scimilarity_cell_type_broad = 3) %>%
+              dplyr::mutate(scimilarity_cell_type_broad = ifelse(is.na(scimilarity_cell_type_broad), scimilarity_cell_type_granular, scimilarity_cell_type_broad )) %>%
+              dplyr::filter(!is.na(include))
+              
+target_celltypes <- unique(scim_dict$label)
+          
+  
+```
+
+```{python eval=scimilarity_logical, echo=scimilarity_logical & echo_set}
+
+import pandas as pd
+import scanpy as sc
+from scipy.io import mmread
+from scimilarity.utils import lognorm_counts, align_dataset
+from scimilarity import CellAnnotation
+model_path = r.model_dir
+ca = CellAnnotation(model_path=model_path)
+
+counts = mmread("counts.mtx").T
+counts = counts.tocsr() 
+data = mmread("data.mtx").T
+data = data.tocsr() 
+
+metadata = pd.read_csv("seurat_metadata.csv", index_col=0)
+umap = pd.read_csv("umap.csv", index_col=0)
+clusters = pd.read_csv("clusters.csv", index_col=0)
+
+barcodes = pd.read_csv("barcodes.csv")["Barcode"].values
+features = pd.read_csv("features.csv")["Feature"].values
+
+adata = sc.AnnData(X=data, obs=pd.DataFrame(index=barcodes), var=pd.DataFrame(index=features))
+adata.layers["counts"] = counts
+
+
+adata.obs = adata.obs.join(metadata) 
+
+adata = align_dataset(adata, ca.gene_order)
+adata = lognorm_counts(adata)
+adata.obsm["X_scimilarity"] = ca.get_embeddings(adata.X)
+adata.obsm["X_umap"] = umap.values
+
+
+predictions, nn_idxs, nn_dists, nn_stats = ca.get_predictions_kNN(
+    adata.obsm["X_scimilarity"]
+)
+adata.obs["predictions_unconstrained"] = predictions.values
+
+celltype_counts = adata.obs.predictions_unconstrained.value_counts()
+
+
+ca.safelist_celltypes(r.target_celltypes)
+  
+adata = ca.annotate_dataset(adata)
+
+
+sc.pl.umap(
+    adata,
+    color="celltype_hint",
+    legend_fontsize=5,
+)
+
+sc.pl.umap(adata, color="min_dist", vmax=0.1)
+
+scim_out = adata.obs["celltype_hint"]
+scim_out.to_csv("scimilarity_output.csv", index=True)
+```
+
+
+```{r eval=scimilarity_logical, echo=scimilarity_logical & echo_set}
+
+
+scim_out <- read_csv("scimilarity_output.csv") %>%
+            dplyr::rename("barcode" = 1) %>%
+            left_join(scim_dict, by = c("celltype_hint" = "label")) %>%
+            dplyr::rename(scimilarity_label = "celltype_hint") %>%
+            right_join(seurat[[]] %>%
+                         rownames_to_column("barcode"), by = "barcode") %>%
+            dplyr::select(-all_of(colnames(seurat[[]]))) %>%
+            dplyr::select(-include) %>%
+            column_to_rownames("barcode")
+
+
+seurat <- AddMetaData(seurat, metadata = scim_out)
+
+  
+p1 <- DimPlot(seurat, 
+              reduction = reduction_sel, 
+              group.by = "scimilarity_label",
+              label = TRUE, 
+              label.size = 2.5,
+              repel = TRUE,
+              raster = T) + 
+                  ggtitle("SCimilarity label") 
+
+p2 <- DimPlot(seurat, 
+              reduction = reduction_sel, 
+              group.by = "scimilarity_cell_type_granular",
+              label = F, 
+              label.size = 2.5,
+              repel = TRUE,
+              raster = T) + 
+                  ggtitle("Cell types (granular)") 
+
+p3 <- DimPlot(seurat, 
+              reduction = reduction_sel, 
+              group.by = "scimilarity_cell_type_broad",
+              label = F, 
+              label.size = 2.5,
+              repel = TRUE,
+              raster = T) + 
+                  ggtitle("Cell types (broad)") 
+
+p1
+p3
+p2
+
+
+DotPlot_Plus(seurat, 
+            features = params$markers_rna, 
+            group.by = "scimilarity_cell_type_granular", 
+            assay = "RNA",
+            col.min = -1 ) +
+            ggtitle("Cell type markers (RNA)")
+
+if(run_adt){
+  DotPlot_Plus(seurat, 
+            features = params$markers_adt, 
+            group.by = "scimilarity_cell_type_granular", 
+            assay = "ADT",
+            col.min = -1 )  +
+            ggtitle("Cell type markers (ADT)")
+}
+
+
+
+
+
+
+if(params$selected_method == "scimilarity"){
+  seurat$cell_type <- seurat$scimilarity_cell_type_granular
+}
+
+file.remove(params$scimilarity_reference)
+
+
+```
+
+`r if(scimilarity_logical){"#### SCimilarity annotation cell frequencies"}`
+```{r eval=scimilarity_logical, echo=scimilarity_logical & echo_set}
+
+if(params$outcomes == "none"){
+  cellfreq_p_main <- cluster_frequency_plot(seurat,ident = "scimilarity_cell_type_broad") + ggtitle("Cell type (broad) frequencies per sample")
+  cellfreq_p_fine <- cluster_frequency_plot(seurat,ident = "scimilarity_cell_type_granular") + ggtitle("Cell type (fine) frequencies per sample")
+  cellfreq_df_main <- compute_ident_frequencies(seurat, ident = "scimilarity_cell_type_broad")
+  cellfreq_df_fine <- compute_ident_frequencies(seurat, ident = "scimilarity_cell_type_granular")
+} else {
+  cellfreq_p_main <- cluster_frequency_plot(seurat,ident = "scimilarity_cell_type_broad", split.by = params$outcomes) + ggtitle("Cell type (broad) frequencies per sample")
+  cellfreq_p_fine <- cluster_frequency_plot(seurat,ident = "scimilarity_cell_type_granular", split.by = params$outcomes) + ggtitle("Cell type (fine) frequencies per sample")
+  cellfreq_df_main <- compute_ident_frequencies(seurat, ident = "scimilarity_cell_type_broad", outcomes = params$outcomes)
+  cellfreq_df_fine <- compute_ident_frequencies(seurat, ident = "scimilarity_cell_type_granular", outcomes = params$outcomes)
+}
+
+
+
+if(knitr::is_html_output()){
+  datatable(cellfreq_df_main,
+                        caption = "Cell type (broad) frequencies per sample",
+                        extensions = 'Buttons',
+                          options = list(dom = 'lfrtpB',
+                                         buttons = list(
+                                                      list(extend = 'csv', title = "scimilarity_celltype_main_frequencies_per_sample"),
+                                                      list(extend = 'excel', title = "scimilarity_celltype_main_frequencies_per_sample")),
+                                         lengthMenu = list(c(10,25,50,-1),
+                                                           c(10,25,50,"All")))) %>%
+                    formatRound(columns = c("relative_frequency"), digits = 3)
+  
+  
+} 
+
+print(cellfreq_p_main)
+
+
+if(knitr::is_html_output()){
+  datatable(cellfreq_df_fine,
+                        caption = "Cell type (fine) frequencies per sample",
+                        extensions = 'Buttons',
+                          options = list(dom = 'lfrtpB',
+                                         buttons = list(
+                                                      list(extend = 'csv', title = "scimilarity_celltype_fine_frequencies_per_sample"),
+                                                      list(extend = 'excel', title = "scimilarity_celltype_fine_frequencies_per_sample")),
+                                         lengthMenu = list(c(10,25,50,-1),
+                                                           c(10,25,50,"All")))) %>%
+                    formatRound(columns = c("relative_frequency"), digits = 3)
+  
+  
+} 
+print(cellfreq_p_fine)
+
+
+
+```
+
 
 
 ```{r }

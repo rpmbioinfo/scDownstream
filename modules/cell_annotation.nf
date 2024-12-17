@@ -27,6 +27,8 @@ process CELL_ANNOTATION{
     val markers_rna
     val markers_adt
     val outcomes
+    val sketch_cells
+    path celltype_dictionary
 
  
 
@@ -54,7 +56,9 @@ process CELL_ANNOTATION{
                     -P markers_rna:"${markers_rna}" \
                     -P markers_adt:"${markers_adt}" \
                     -P selected_method:"${selected_method}" \
-                    -P outcomes:"${outcomes}"
+                    -P outcomes:"${outcomes}" \
+                    -P sketch_cells:"${sketch_cells}" \
+                    -P celltype_dictionary:"${celltype_dictionary}"
 
 
     bash chapter_package.sh "${rmd.baseName}"

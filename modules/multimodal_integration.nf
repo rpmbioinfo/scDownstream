@@ -14,6 +14,7 @@ process MULTIMODAL_INTEGRATION {
     val umap2_ndims
     val first_lsi_pc
     val integrate_datasets
+    val sketch_cells
  
 
     output:
@@ -29,8 +30,8 @@ process MULTIMODAL_INTEGRATION {
                     -P pipeline:"${pipeline}" \
                     -P umap2_ndims:${umap2_ndims} \
                     -P first_lsi_pc:${first_lsi_pc} \
-                    -P integrate_datasets:${integrate_datasets}
-
+                    -P integrate_datasets:${integrate_datasets} \
+                    -P sketch_cells:"${sketch_cells}" 
 
     bash chapter_package.sh "${rmd.baseName}"
     """

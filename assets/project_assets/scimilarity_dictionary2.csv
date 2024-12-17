@@ -1,0 +1,204 @@
+label	cell_type_granular	cell_type_broad	include
+activated CD4-positive, alpha-beta T cell	CD4 T cell – Activated	CD4 T cell	yes
+activated CD8-positive, alpha-beta T cell	CD8 T cell – Activated	CD8 T cell	yes
+alpha-beta T cell	T cell	T cell	yes
+alveolar macrophage	Alveolar Macrophage	Macrophage	
+amacrine cell	Amacrine Cell	Amacrine Cell	
+animal cell	Animal Cell	Animal Cell	
+astrocyte	Astrocyte	Astrocyte	
+basal cell	Basal cell	Basal cell	
+basal cell of prostate epithelium	Basal cell	Basal cell	
+B cell	B cell	B cell	yes
+blood vessel endothelial cell	Blood Vessel Endothelial Cell	Endothelial Cell	
+bronchial smooth muscle cell	Bronchial Smooth Muscle Cell	Muscle cell	
+capillary endothelial cell	Capillary Endothelial Cell	Endothelial Cell	
+cardiac endothelial cell	Cardiac Endothelial Cell	Endothelial Cell	
+cardiac muscle cell	Cardiac Muscle Cell	Muscle cell	
+cardiac neuron	Cardiac Neuron	Neuron	
+CD141-positive myeloid dendritic cell	mDC	Dendritic cell	yes
+CD14-low, CD16-positive monocyte	Non-classical monocyte	Monocyte	yes
+CD14-positive, CD16-positive monocyte	Intermediate monocyte	Monocyte	yes
+CD14-positive monocyte	Classical monocyte	Monocyte	yes
+CD16-negative, CD56-bright natural killer cell, human	NK (CD16neg CD56high)	NK cell	yes
+CD16-positive, CD56-dim natural killer cell, human	NK (CD16pos CD56low)	NK cell	yes
+CD1c-positive myeloid dendritic cell	mDC	Dendritic cell	yes
+CD4-positive, alpha-beta cytotoxic T cell	Cytotoxic CD4 T cell	CD4 T cell	yes
+CD4-positive, alpha-beta memory T cell	Memory CD4 T cell	CD4 T cell	yes
+CD4-positive, alpha-beta T cell	CD4 T cell	CD4 T cell	yes
+CD4-positive, CD25-positive, alpha-beta regulatory T cell	Treg	CD4 T cell	yes
+CD4-positive helper T cell	CD4 T cell	CD4 T cell	yes
+CD8-positive, alpha-beta cytotoxic T cell	Cytotoxic CD8 T cell	CD8 T cell	yes
+CD8-positive, alpha-beta memory T cell	Memory CD8 T cell	CD8 T cell	yes
+CD8-positive, alpha-beta T cell	CD8 T cell	CD8 T cell	yes
+central memory CD4-positive, alpha-beta T cell	CD4 Tcm	CD4 T cell	yes
+central memory CD8-positive, alpha-beta T cell	CD8 Tcm	CD8 T cell	yes
+cholangiocyte	Cholangiocyte	Cholangiocyte	
+ciliated cell	Ciliated Cell		
+classical monocyte	Classical Monocyte	Monocyte	yes
+class switched memory B cell	Class Switched Memory B Cell	B cell	yes
+club cell	Club Cell		
+colon epithelial cell	Colon Epithelial Cell	Epithelial Cell	
+common lymphoid progenitor	Common Lymphoid Progenitor	Progenitor	yes
+conventional dendritic cell	Conventional Dendritic Cell	CLP	yes
+dendritic cell	Dendritic Cell	Dendritic cell	
+dendritic cell, human	Dendritic Cell	Dendritic cell	
+double negative thymocyte	DN Thymocyte	Thymocyte	
+double-positive, alpha-beta thymocyte	DP Thymocyte	Thymocyte	
+duct epithelial cell	Duct Epithelial Cell	Epithelial Cell	
+effector CD4-positive, alpha-beta T cell	Effector CD4 T cell	CD4 T cell	yes
+effector CD8-positive, alpha-beta T cell	Effector CD8 T cell	CD8 T cell	yes
+effector memory CD4-positive, alpha-beta T cell	CD4 Tem	CD4 T cell	yes
+effector memory CD8-positive, alpha-beta T cell	CD8 Tem	CD8 T cell	yes
+effector memory CD8-positive, alpha-beta T cell, terminally differentiated	Effector CD8 T cell	CD8 T cell	yes
+endothelial cell	Endothelial Cell	Endothelial Cell	
+endothelial cell of artery	Endothelial Cell Of Artery	Endothelial Cell	
+endothelial cell of hepatic sinusoid	Endothelial Cell Of Hepatic Sinusoid	Endothelial Cell	
+endothelial cell of lymphatic vessel	Endothelial Cell Of Lymphatic Vessel	Endothelial Cell	
+endothelial cell of vascular tree	Endothelial Cell Of Vascular Tree	Endothelial Cell	
+enteric smooth muscle cell	Enteric Smooth Muscle Cell	Smooth muscle cell	
+enterocyte	Enterocyte		
+enteroendocrine cell	Enteroendocrine Cell		
+epicardial adipocyte	Epicardial Adipocyte	Adipocyte	
+epithelial cell	Epithelial Cell	Epithelial Cell	
+epithelial cell of proximal tubule	Epithelial Cell Of Proximal Tubule	Epithelial Cell	
+erythrocyte	Erythrocyte		
+erythroid lineage cell	Erythroid Lineage Cell		
+erythroid progenitor cell	Erythroid Progenitor Cell		
+fast muscle cell	Fast Muscle Cell	Muscle cell	
+fat cell	Fat Cell		
+fibroblast	Fibroblast	Fibroblast	
+fibroblast of cardiac tissue	Fibroblast Of Cardiac Tissue	Fibroblast	
+fibroblast of lung	Fibroblast Of Lung	Fibroblast	
+follicular B cell	Follicular B Cell	B cell	yes
+follicular dendritic cell	Follicular Dendritic Cell	Follicular Dendritic Cell	
+gamma-delta T cell	gd T Cell	T cell	yes
+germinal center B cell	Germinal Center B Cell	B cell	
+glandular epithelial cell	Glandular Epithelial Cell	Epithelial Cell	
+glial cell	Glial Cell		
+glutamatergic neuron	Glutamatergic Neuron	Neuron	
+goblet cell	Goblet Cell		
+granulocyte	Granulocyte		
+group 3 innate lymphoid cell	Group 3 Innate Lymphoid Cell	ILC	yes
+hematopoietic precursor cell	Hematopoietic Precursor Cell	HSC	yes
+hematopoietic stem cell	Hematopoietic Stem Cell	HSC	yes
+hepatic stellate cell	Hepatic Stellate Cell		
+hepatocyte	Hepatocyte		
+IgA plasma cell	IgA Plasma Cell	Plasma cell	yes
+IgG plasma cell	IgG Plasma Cell	Plasma cell	yes
+IgM plasma cell	IgM Plasma Cell	Plasma cell	yes
+immature B cell	Immature B Cell	B cell	yes
+inflammatory macrophage	Inflammatory Macrophage	Macrophage	yes
+innate lymphoid cell	Innate Lymphoid Cell	ILC	yes
+intermediate monocyte	Intermediate Monocyte	Monocyte	yes
+interstitial cell of Cajal	Interstitial Cell Of Cajal		
+intestinal crypt stem cell	Intestinal Crypt Stem Cell		
+intestinal tuft cell	Intestinal Tuft Cell		
+ionocyte	Ionocyte		
+keratinocyte	Keratinocyte		
+kidney collecting duct intercalated cell	Kidney Collecting Duct Intercalated Cell		
+kidney collecting duct principal cell	Kidney Collecting Duct Principal Cell		
+kidney connecting tubule epithelial cell	Kidney Connecting Tubule Epithelial Cell	Epithelial Cell	
+kidney distal convoluted tubule epithelial cell	Kidney Distal Convoluted Tubule Epithelial Cell	Epithelial Cell	
+kidney epithelial cell	Kidney Epithelial Cell	Epithelial Cell	
+kidney interstitial fibroblast	Kidney Interstitial Fibroblast	Fibroblast	
+kidney loop of Henle thick ascending limb epithelial cell	Kidney Loop Of Henle Thick Ascending Limb Epithelial Cell	Epithelial Cell	
+kidney loop of Henle thin descending limb epithelial cell	Kidney Loop Of Henle Thin Descending Limb Epithelial Cell	Epithelial Cell	
+kidney proximal convoluted tubule epithelial cell	Kidney Proximal Convoluted Tubule Epithelial Cell	Epithelial Cell	
+Kupffer cell	Kupffer Cell		
+Langerhans cell	Langerhans Cell		
+leukocyte	Leukocyte		
+luminal cell of prostate epithelium	Luminal Cell Of Prostate Epithelium		
+luminal epithelial cell of mammary gland	Luminal Epithelial Cell Of Mammary Gland	Epithelial Cell	
+lung ciliated cell	Lung Ciliated Cell		
+lung endothelial cell	Lung Endothelial Cell		
+lung macrophage	Lung Macrophage	Macrophage	
+lung neuroendocrine cell	Lung Neuroendocrine Cell		
+lung secretory cell	Lung Secretory Cell		
+lymphocyte	Lymphocyte		
+macrophage	Macrophage	Macrophage	
+mast cell	Mast Cell		
+mature NK T cell	Mature NK T Cell		
+medullary thymic epithelial cell	Medullary Thymic Epithelial Cell	Epithelial Cell	
+megakaryocyte	Megakaryocyte		
+melanocyte	Melanocyte		
+memory B cell	Memory B Cell	B cell	yes
+memory T cell	Memory T Cell	T cell	yes
+mesenchymal cell	Mesenchymal Cell		
+mesenchymal stem cell	Mesenchymal Stem Cell		
+mesodermal cell	Mesodermal Cell		
+mesothelial cell	Mesothelial Cell		
+microglial cell	Microglial Cell		
+monocyte	Monocyte	Monocyte	
+mucosal invariant T cell	MAIT cell		
+mucus secreting cell	Mucus Secreting Cell		
+Mueller cell	Mueller Cell		
+myeloid cell	Myeloid Cell		
+myeloid dendritic cell	mDC	Dendritic cell	yes
+myeloid dendritic cell, human	mDC	Dendritic cell	yes
+myofibroblast cell	Myofibroblast Cell		
+naive B cell	Naive B Cell	B cell	yes
+naive regulatory T cell	Naive Regulatory T Cell		
+naive T cell	Naive T Cell	T cell	yes
+naive thymus-derived CD4-positive, alpha-beta T cell	CD4 SP Thymocyte	Thymocyte	
+naive thymus-derived CD8-positive, alpha-beta T cell	CD8 SP Thymocyte	Thymocyte	
+native cell	Native Cell		
+natural killer cell	NK cell	NK cell	yes
+neural cell	Neural Cell		
+neural crest cell	Neural Crest Cell		
+neuroendocrine cell	Neuroendocrine Cell		
+neuron	Neuron	Neuron	
+neutrophil	Neutrophil		yes
+non-classical monocyte	Non-classical monocyte	Monocyte	yes
+OFF-bipolar cell	Off-Bipolar Cell		
+oligodendrocyte	Oligodendrocyte		
+oligodendrocyte precursor cell	Oligodendrocyte Precursor Cell		
+ON-bipolar cell	On-Bipolar Cell		
+pancreatic A cell	Pancreatic A Cell		
+pancreatic acinar cell	Pancreatic Acinar Cell		
+pancreatic D cell	Pancreatic D Cell		
+pancreatic ductal cell	Pancreatic Ductal Cell		
+pancreatic stellate cell	Pancreatic Stellate Cell		
+paneth cell	Paneth Cell		
+paneth cell of epithelium of small intestine	Paneth Cell Of Epithelium Of Small Intestine		
+parietal epithelial cell	Parietal Epithelial Cell		
+pericyte	Pericyte		
+periportal region hepatocyte	Periportal Region Hepatocyte		
+plasmablast	Plasmablast	Plasma cell	yes
+plasma cell	Plasma Cell	Plasma cell	yes
+plasmacytoid dendritic cell	pDC	Dendritic cell	yes
+plasmacytoid dendritic cell, human	pDC	Dendritic cell	yes
+platelet	Platelet		
+precursor B cell	Precursor B Cell		
+pro-B cell	Pro-B Cell	B cell	yes
+progenitor cell	Progenitor Cell		
+pulmonary ionocyte	Pulmonary Ionocyte		
+radial glial cell	Radial Glial Cell		
+regulatory T cell	Treg	T cell	yes
+respiratory basal cell	Respiratory Basal Cell	Basal cell	
+respiratory epithelial cell	Respiratory Epithelial Cell	Epithelial Cell	
+retina horizontal cell	Retina Horizontal Cell		
+retinal bipolar neuron	Retinal Bipolar Neuron	Neuron	
+retinal cone cell	Retinal Cone Cell		
+retinal ganglion cell	Retinal Ganglion Cell		
+retinal pigment epithelial cell	Retinal Pigment Epithelial Cell	Epithelial Cell	
+retinal rod cell	Retinal Rod Cell		
+secretory cell	Secretory Cell		
+slow muscle cell	Slow Muscle Cell	Muscle cell	
+smooth muscle cell	Smooth Muscle Cell	Muscle cell	
+smooth muscle cell of prostate	Smooth Muscle Cell Of Prostate	Muscle cell	
+squamous epithelial cell	Squamous Epithelial Cell	Epithelial Cell	
+stem cell	Stem Cell	Stem cell	
+stromal cell	Stromal Cell	Stromal cell	
+stromal cell of ovary	Stromal Cell Of Ovary	Stromal cell	
+T cell	T cell	T cell	
+T follicular helper cell	Tfh	CD4 T cell	yes
+T-helper 17 cell	Th17 Cell	CD4 T cell	yes
+T-helper 1 cell	Th1 Cell	CD4 T cell	yes
+thymocyte	Thymocyte		
+tracheal goblet cell	Tracheal Goblet Cell		
+transit amplifying cell of small intestine	Transit Amplifying Cell Of Small Intestine		
+type B pancreatic cell	Type B Pancreatic Cell		
+type II pneumocyte	Type Ii Pneumocyte		
+type I pneumocyte	Type I Pneumocyte		
+vascular associated smooth muscle cell	Vascular Associated Smooth Muscle Cell		
+vein endothelial cell	Vein Endothelial Cell	Endothelial Cell	

@@ -5,6 +5,8 @@ params:
   rna_normalization_method: 'sct'
   umap2_ndims: 30
   first_lsi_pc: 2
+  sketch_cells: true
+  sketch_n: 5000
 ---
 
 # Dimension reduction and clustering
@@ -36,6 +38,7 @@ if(knitr::is_html_output()){
 
 source("run_funcs.R")
 
+options(future.globals.maxSize = 12 * 1024^3)
 
 knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width = 10, cache.lazy = F)
 
@@ -46,6 +49,7 @@ knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.al
 run_gex <- FALSE
 run_atac <- FALSE
 run_adt <- FALSE
+sketch <- params$sketch_cells
 
 multimodal <- FALSE
 
@@ -83,7 +87,7 @@ seurat <- readRDS(params$seurat)
 ## Dimension reduction
 
 `r if(run_gex){"### Gene Expression dimension reduction"}`
-```{r echo=run_gex & echo_set, eval=run_gex, results='asis'}
+```{r echo=run_gex & echo_set & !sketch, eval=run_gex & !sketch, results='asis'}
 
 
 DefaultAssay(seurat) <- "RNA"
@@ -114,6 +118,72 @@ seurat <- RunUMAP(seurat, dims = 1:params$umap2_ndims, reduction.name = reductio
 DimPlot(seurat, group.by = 'SampleID', label = T, repel = T, raster = T) + NoLegend()
 ```
 
+```{r echo=run_gex & echo_set & sketch, eval=run_gex & sketch, results='asis'}
+
+
+
+DefaultAssay(seurat) <- "sketch"
+  
+if(params$rna_normalization_method == "sct"){
+
+  seurat <- SCTransform(seurat, vars.to.regress = 'percent.mt', verbose = FALSE, new.assay.name = "SCT_sketched", assay = "sketch") 
+  seurat <- RunPCA(seurat, reduction.name = 'pca.sk', verbose = F) 
+
+
+} else {
+  seurat <- NormalizeData(seurat, normalization.method = "LogNormalize", scale.factor = 10000, verbose = F)
+  seurat <- FindVariableFeatures(seurat, selection.method = "vst", nfeatures = 2000, verbose = F)
+  var_feats <- VariableFeatures(seurat, verbose = F)
+  seurat <- ScaleData(seurat, features = row.names(seurat), verbose = F)
+  seurat <- RunPCA(seurat, features = var_feats, reduction.name = 'pca.sk', verbose = F)
+  
+}
+
+VizDimLoadings(seurat, dims = 1:2, reduction = "pca.sk") + ggtitle("Top RNA Variable Features from PC1 and PC2")
+
+ElbowPlot(seurat, ndims = 30, reduction = "pca.sk") + ggtitle("RNA Elbow Plot to isolate optimal number of dimensions")
+
+cat("Workflow has the number of dimensions set to", params$umap2_ndims, ". Make sure this value is supported by the Elbow Plot or adjust in the config file accordingly.")
+
+
+seurat <- RunUMAP(seurat, dims = 1:params$umap2_ndims, verbose = F, reduction.name = "umap.sk", reduction = "pca.sk")
+
+
+if(params$rna_normalization_method == "sct"){
+  DefaultAssay(seurat) <- "SCT"
+  seurat <- SCTransform(seurat, vars.to.regress = 'percent.mt', verbose = FALSE, new.assay.name = "SCT") 
+  seurat <- ProjectData(
+    object = seurat,
+    assay = "SCT",
+    full.reduction = "pca",
+    sketched.assay = "SCT_sketched",
+    sketched.reduction = "pca.sk",
+    dims = 1:params$umap2_ndims,
+    verbose = F
+  )
+  
+} else {
+  DefaultAssay(seurat) <- "RNA"
+  seurat <- ProjectData(
+    object = seurat,
+    assay = "RNA",
+    full.reduction = "pca",
+    sketched.assay = "sketch",
+    sketched.reduction = "pca.sk",
+    dims = 1:params$umap2_ndims,
+    verbose = F
+  )
+}
+ 
+
+
+reduction_name_rna <- 'umap.rna'
+seurat <- RunUMAP(seurat, dims = 1:params$umap2_ndims, reduction.name = reduction_name_rna, reduction.key = "rnaUMAP_", reduction = "pca", verbose = F)
+
+
+DimPlot(seurat, group.by = 'SampleID', label = T, repel = T, raster = T) + NoLegend()
+```
+
 
 
 `r if(run_atac){"### Chromatin Accessibility dimension reduction"}`
@@ -139,8 +209,11 @@ DimPlot(seurat, group.by = 'SampleID', label = T, repel = T, raster = T) + NoLeg
 ```
 
 
+
+
 `r if(run_adt){"### Protein dimension reduction"}`
-```{r echo=run_adt & echo_set, eval=run_adt, results='asis'}
+
+```{r echo=run_adt & echo_set , eval=run_adt, results='asis'}
 
 DefaultAssay(seurat) <- "ADT"
 

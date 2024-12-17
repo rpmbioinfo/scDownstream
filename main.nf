@@ -20,9 +20,9 @@ params.help      = false
 include { PIPELINE_INITIALISATION } from './subworkflows/local/pipeline_init'
 
 include { QUALITY_CONTROL } from './modules/qc.nf'
-include { CREATE_SEURAT_MULTIMODAL } from './modules/create_seurat.nf'
-include { CREATE_SEURAT_GEX } from './modules/create_seurat.nf'
+include { CALL_PEAKS } from './modules/qc.nf'
 include { CREATE_SEURAT_ATAC } from './modules/create_seurat.nf'
+include { CREATE_SEURAT } from './modules/create_seurat.nf'
 include { CONVERT_MATRIX } from './modules/create_seurat.nf'
 include { GET_ENSDB_ANNOTATION } from './modules/get_ensdb_annot.nf'
 include { DIMENSION_REDUCTION } from './modules/dim_reduce.nf'
@@ -60,14 +60,25 @@ workflow {
     )
 
 
+    if (params.rna_normalization_method == 'sct' && params.run_scimilarity) {
+      error "Error: SCimilarity cell annotation can only be performed on log transformed data."
+    }
 
-    book_assets = channel.fromPath( 'assets/book_assets/*/*')
-                .collect()
+    if (params.run_scimilarity) {
+      params.scimilarity_reference = params.annotations["scimilarity"]["annotation_path"]
+    } else {
+        params.scimilarity_reference = "."
+
+    }
+
+
+    book_assets = channel.fromPath( 'assets/book_assets/*')
                 .mix(channel.fromPath(params.logo))
+                .mix(channel.fromPath(params.quarto_index))
+                .mix(channel.fromPath(params.quarto_yml))
+                .collect()
 
-    book_assets.view()
 
-    //book_assets.view()
     scripts_ch = channel.fromPath("bin/*")
                  .collect()
 
@@ -78,7 +89,8 @@ workflow {
     params.mito_regex = getGenomeAttribute('mito_regex')
     params.ribo_regex = getGenomeAttribute('ribo_regex')
     params.bsgenome = getGenomeAttribute('bs_genome')
-    //params.genbank = getGenomeAttribute('genbank')
+    params.scimilarity_dictionary = params.annotations["scimilarity"]["celltype_dictionary"]
+
     params.name = getGenomeAttribute('name')
 
     if(params.input_type == "counts") {
@@ -103,43 +115,32 @@ workflow {
         | join(barcode_ch)
         | set { counts_ch }
 
+
+        
+
         GET_ENSDB_ANNOTATION(params.annotation, params.get_annot, params.genome)
         | set { ens_annot_ch }
-
-
-        CREATE_SEURAT_MULTIMODAL(counts_ch, ens_annot_ch.annotation, params.pipeline, params.create_seurat)
-        | set { seurat_ch }
-
-        if (params.matrix == "filtered") {
-        seurat_ch.filt
-        | collect 
-        | set { seurat_combined_ch}
         
+        if (['multiome', 'teaseq', 'atac'].contains(params.pipeline)) {
+            CREATE_SEURAT_ATAC(counts_ch, params.pipeline, params.matrix, params.create_seurat,ens_annot_ch.annotation, book_assets)
+            | set { seurat_ch }
+            //CREATE_SEURAT_ATAC(conv_mat_ch.bp_mat.collect(), ens_annot_ch.annotation, params.pipeline, params.create_seurat)
+            //| set { seurat_ch }
         } else {
-            seurat_ch.raw
-            | collect 
-            | set { seurat_combined_ch}
+            CREATE_SEURAT(counts_ch, params.pipeline, params.matrix, params.create_seurat, book_assets)
+            | set { seurat_ch }
+            //CREATE_SEURAT(conv_mat_ch.bp_mat.collect(), params.pipeline, params.create_seurat)
         }
-
-        seurat_ch.fragments
-        | mix(seurat_ch.fragment_index)
-        | collect
-        | set { combined_fragments_ch }
-
-    } else {
-        if(params.matrix == "filtered") {
-            Channel.fromPath(  "${params.input}/**/outs/filtered_matrix_seurat.rds", checkIfExists : true )
-            .set { seurat_combined_ch }
-        } else {
-            Channel.fromPath(  "${params.input}/**/outs/raw_matrix_seurat.rds", checkIfExists : true )
-            .set { seurat_combined_ch }
-        }
+        
     }
-    
 
-    /*
-    QUALITY_CONTROL(seurat_combined_ch,
-                    combined_fragments_ch,
+    count_pkg_ch = seurat_ch.count_pkg.collect()
+
+    quarto_ch = seurat_ch.quarto.first()
+   
+
+    QUALITY_CONTROL(seurat_ch.seurat.collect(),
+                    count_pkg_ch,
                     params.qc_script,
                     book_assets,
                     params.pipeline,
@@ -166,23 +167,39 @@ workflow {
                     params.umap1_ndims,
                     params.clustering1_res,
                     params.doublet_removal,
-                    params.doublet_confidence).set {qc_ch}
+                    params.doublet_confidence,
+                    params.sketch_cells,
+                    params.sketch_n).set {qc_ch}
+    quarto_ch = quarto_ch.concat(qc_ch.quarto)
  
-    quarto_ch = qc_ch.quarto
 
+    if (params.pipeline in ["multiome", 'teaseq', 'atac'] & params.recall_peaks) {
+        CALL_PEAKS(qc_ch.seurat,
+                    params.pipeline,
+                    params.peak_call,
+                    book_assets)
+        | set {post_peaks_ch }
+        post_qc_seurat = post_peaks_ch.seurat
+        quarto_ch = quarto_ch.concat(post_peaks_ch.quarto)
+    } else {
+        post_qc_seurat = qc_ch.seurat
+    }
+    
 
     if (!['QC'].contains(params.stop_after)) {
-        DIMENSION_REDUCTION(qc_ch.seurat,
+        DIMENSION_REDUCTION(post_qc_seurat,
                            params.dimreduc_script,
                            book_assets,
                            params.pipeline,
                            params.umap2_ndims,
                            params.first_lsi_pc,
-                           params.rna_normalization_method)
+                           params.rna_normalization_method,
+                           params.sketch_cells,
+                           params.sketch_n)
         | set {umap_ch }
         quarto_ch = quarto_ch.concat(umap_ch.quarto)
     }
-
+   
     if (!['QC', "DR"].contains(params.stop_after)) {
         if (params.integrate_datasets ) {
             INTEGRATE_DATASETS(umap_ch.seurat,
@@ -194,7 +211,9 @@ workflow {
                             params.integrate_by,
                             params.view_batch,
                             params.umap2_ndims,
-                            params.first_lsi_pc)
+                            params.first_lsi_pc,
+                            params.sketch_cells,
+                            params.rna_normalization_method)
             | set { int_ch }
             quarto_ch = quarto_ch.concat(int_ch.quarto)
             
@@ -202,37 +221,46 @@ workflow {
             int_ch = umap_ch
         }
     }
-
+    
     if (!['QC', "DR", 'INT'].contains(params.stop_after)) {
-        if (params.pipeline in ["multiome", 'teaseq', 'cite', 'cite_crispr'] & params.integrate_modalities) {
+        if (params.pipeline in ["multiome", 'teaseq', 'cite'] & params.integrate_modalities) {
             MULTIMODAL_INTEGRATION(int_ch.seurat,
                                 params.int_multimod_script,
                                 book_assets,
                                 params.pipeline,
                                 params.umap2_ndims,
                                 params.first_lsi_pc,
-                                params.integrate_datasets)
+                                params.integrate_datasets,
+                                params.sketch_cells)
             | set { intwnn_ch }
             quarto_ch = quarto_ch.concat(intwnn_ch.quarto)
             
-        } else {
+        } else if (params.integrate_datasets){
             intwnn_ch = int_ch
+        } else {
+            intwnn_ch = umap_ch
         }
-
+        
         CLUSTERING(intwnn_ch.seurat,
                 params.clustering_script,
                 book_assets,
                 params.pipeline,
                 params.clustering2_res,
                 params.integrate_datasets,
-                params.outcomes)
+                params.outcomes,
+                params.sketch_cells,
+                params.de_method,
+                params.de_latent_vars,
+                params.de_min_pct,
+                params.de_logfc)
         | set { cluster_ch }
 
         quarto_ch = quarto_ch.concat(cluster_ch.quarto)
+        
     }
 
 
- 
+
 
     if (!['QC', "DR", 'INT', "CLUST"].contains(params.stop_after) ) {
         CELL_ANNOTATION(cluster_ch.seurat,
@@ -250,7 +278,9 @@ workflow {
                         params.selected_method,
                         params.markers_rna,
                         params.markers_adt,
-                        params.outcomes)
+                        params.outcomes,
+                        params.sketch_cells,
+                        params.scimilarity_dictionary)
         | set { cell_ann_ch }
 
         quarto_ch = quarto_ch.concat(cell_ann_ch.quarto)
@@ -259,7 +289,7 @@ workflow {
     BOOK_RENDER(scripts_ch, 
                      book_assets,
                      quarto_ch.collect())
-    */
+    
     
 }
 
@@ -278,3 +308,4 @@ def getGenomeAttribute(attribute) {
     }
     return null
 }
+

@@ -18,7 +18,8 @@ process INTEGRATE_DATASETS {
     val view_batch
     val umap2_ndims
     val first_lsi_pc
- 
+    val sketch_cells
+    val rna_normalization_method
 
     output:
     path "*_freeze.zip", emit: quarto
@@ -36,8 +37,9 @@ process INTEGRATE_DATASETS {
                     -P integrate_by:"${integrate_by}" \
                     -P view_batch:"${view_batch}" \
                     -P umap2_ndims:${umap2_ndims} \
-                    -P first_lsi_pc:${first_lsi_pc}
-
+                    -P first_lsi_pc:${first_lsi_pc} \
+                    -P rna_normalization_method:"${rna_normalization_method}" \
+                    -P sketch_cells:"${sketch_cells}" 
 
     bash chapter_package.sh "${rmd.baseName}"
     """

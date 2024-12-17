@@ -36,63 +36,10 @@
                     "type": "string",
                     "default": "filtered",
                     "description": "Select which counts (filtered or raw) to select from"
-                }
-            }
-        },
-        "project_description": {
-            "title": "Project Description",
-            "type": "object",
-            "description": "",
-            "default": "",
-            "properties": {
-                "description": {
-                    "type": "string",
-                    "default": "Generic description",
-                    "hidden": true,
-                    "description": "Project description text"
                 },
-                "data": {
+                "input_type": {
                     "type": "string",
-                    "default": "Generic data description",
-                    "hidden": true,
-                    "description": "Project data description text"
-                },
-                "objectives": {
-                    "type": "string",
-                    "default": "Generic objectives",
-                    "hidden": true,
-                    "description": "Project objectives text"
-                },
-                "metadata": {
-                    "type": "string",
-                    "description": "Sample metadata",
-                    "pattern": "^\\S+\\.(xlsx|xls|csv|tsv)$"
-                },
-                "quarto_index": {
-                    "type": "string",
-                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/project_assets/index.qmd",
-                    "description": "Quarto index file"
-                },
-                "logo": {
-                    "type": "string",
-                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/project_assets/logo.jpeg",
-                    "hidden": true,
-                    "description": "Quarto report logo"
-                },
-                "quarto_yml": {
-                    "type": "string",
-                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/project_assets/_quarto_full.yml",
-                    "hidden": true,
-                    "description": "Quarto YAML file"
-                },
-                "outcomes": {
-                    "type": "string",
-                    "default": "['Group']",
-                    "description": "Selected outcomes for differential expression"
-                },
-                "sample_exclusion": {
-                    "type": "string",
-                    "description": "Samples to exclude from analysis"
+                    "default": "seurat"
                 }
             }
         },
@@ -161,6 +108,18 @@
                         "log"
                     ],
                     "description": "RNA modality normalization method"
+                },
+                "recall_peaks": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "sketch_cells": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "sketch_n": {
+                    "type": "integer",
+                    "default": 5000
                 }
             }
         },
@@ -170,6 +129,10 @@
             "description": "",
             "default": "",
             "properties": {
+                "genome_dir": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/genomes"
+                },
                 "genome": {
                     "type": "string",
                     "default": "GRCh38",
@@ -304,6 +267,45 @@
                 }
             }
         },
+        "project_description": {
+            "title": "Project Description",
+            "type": "object",
+            "description": "",
+            "default": "",
+            "properties": {
+                "metadata": {
+                    "type": "string",
+                    "description": "Sample metadata",
+                    "pattern": "^\\S+\\.(xlsx|xls|csv|tsv)$"
+                },
+                "quarto_index": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/assets/project_assets/index.qmd",
+                    "description": "Quarto index file"
+                },
+                "logo": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/assets/project_assets/logo.jpg",
+                    "hidden": true,
+                    "description": "Quarto report logo"
+                },
+                "quarto_yml": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/assets/project_assets/_quarto_full.yml",
+                    "hidden": true,
+                    "description": "Quarto YAML file"
+                },
+                "outcomes": {
+                    "type": "string",
+                    "default": "['Group']",
+                    "description": "Selected outcomes for differential expression"
+                },
+                "sample_exclusion": {
+                    "type": "string",
+                    "description": "Samples to exclude from analysis"
+                }
+            }
+        },
         "dimension_reduction_clustering": {
             "title": "Dimension reduction / clustering",
             "type": "object",
@@ -363,11 +365,11 @@
                 },
                 "integrate_by": {
                     "type": "string",
-                    "default": "Project"
+                    "default": "SampleID"
                 },
                 "integration_method": {
                     "type": "string",
-                    "default": "CCA",
+                    "default": "RPCA",
                     "enum": [
                         "CCA",
                         "RPCA",
@@ -427,8 +429,10 @@
                     "type": "boolean"
                 },
                 "scimilarity_reference": {
-                    "type": "string",
-                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/SCimilarity/assets/model_v1.1.tar.gz"
+                    "type": "string"
+                },
+                "scimilarity_dictionary": {
+                    "type": "string"
                 },
                 "selected_method": {
                     "type": "string",
@@ -454,46 +458,52 @@
             "properties": {
                 "scripts": {
                     "type": "string",
-                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin"
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/bin",
+                    "hidden": true
                 },
                 "get_annot": {
                     "type": "string",
-                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/get_ensdb_annotation.Rmd",
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/bin/get_ensdb_annotation.Rmd",
                     "hidden": true
                 },
                 "create_seurat": {
                     "type": "string",
-                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/create_seurat.Rmd",
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/bin/create_seurat.qmd",
                     "hidden": true
                 },
                 "qc_script": {
                     "type": "string",
-                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/QC.qmd",
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/bin/QC.qmd",
                     "hidden": true
                 },
                 "dimreduc_script": {
                     "type": "string",
-                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/dimension_reduction.qmd",
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/bin/dimension_reduction.qmd",
                     "hidden": true
                 },
                 "int_script": {
                     "type": "string",
-                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/integrate_datasets.qmd",
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/bin/integrate_datasets.qmd",
                     "hidden": true
                 },
                 "int_multimod_script": {
                     "type": "string",
-                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/integrate_modalities.qmd",
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/bin/integrate_modalities.qmd",
                     "hidden": true
                 },
                 "clustering_script": {
                     "type": "string",
-                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/clustering.qmd",
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/bin/clustering.qmd",
                     "hidden": true
                 },
                 "annotation_script": {
                     "type": "string",
-                    "default": "/home/adampelletier/Documents/RPM_Bioinfo_scripts/Kate_Dobbs/multiome_malaria/bin/cell_annotation.qmd",
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/bin/cell_annotation.qmd",
+                    "hidden": true
+                },
+                "peak_call": {
+                    "type": "string",
+                    "default": "/home/adampelletier/Documents/AWS_pipelines/nextflow/scDownstream/bin/call_peaks.qmd",
                     "hidden": true
                 }
             }
@@ -513,53 +523,76 @@
                     "default": "all"
                 }
             }
+        },
+        "differential_expression": {
+            "title": "Differential expression",
+            "type": "object",
+            "description": "Parameters for differential expression between clusters or other idents",
+            "default": "",
+            "properties": {
+                "de_method": {
+                    "type": "string",
+                    "default": "wilcox"
+                },
+                "de_latent_vars": {
+                    "type": "string",
+                    "default": "['percent.mt']"
+                },
+                "de_min_pct": {
+                    "type": "number",
+                    "default": 0.01
+                },
+                "de_logfc": {
+                    "type": "number",
+                    "default": 0.05
+                }
+            }
         }
     },
     "allOf": [
         {
-            "$ref": "#/definitions/input_output_options"
+            "$ref": "#/$defs/input_output_options"
         },
         {
-            "$ref": "#/definitions/project_description"
+            "$ref": "#/$defs/workflow_control"
         },
         {
-            "$ref": "#/definitions/workflow_control"
+            "$ref": "#/$defs/analysis_details"
         },
         {
-            "$ref": "#/definitions/analysis_details"
+            "$ref": "#/$defs/species_details"
         },
         {
-            "$ref": "#/definitions/species_details"
+            "$ref": "#/$defs/gex_qc_metrics"
         },
         {
-            "$ref": "#/definitions/gex_qc_metrics"
+            "$ref": "#/$defs/atac_qc_metrics"
         },
         {
-            "$ref": "#/definitions/atac_qc_metrics"
+            "$ref": "#/$defs/project_description"
         },
         {
-            "$ref": "#/definitions/dimension_reduction_clustering"
+            "$ref": "#/$defs/dimension_reduction_clustering"
         },
         {
-            "$ref": "#/definitions/dataset_integration"
+            "$ref": "#/$defs/dataset_integration"
         },
         {
-            "$ref": "#/definitions/cell_annotation"
+            "$ref": "#/$defs/cell_annotation"
         },
         {
-            "$ref": "#/definitions/script_collection"
+            "$ref": "#/$defs/script_collection"
         },
         {
-            "$ref": "#/definitions/doublets"
+            "$ref": "#/$defs/doublets"
+        },
+        {
+            "$ref": "#/$defs/differential_expression"
         }
     ],
     "properties": {
         "help": {
             "type": "string"
-        },
-        "genome_dir": {
-            "type": "string",
-            "default": "s3://patru-genomes"
         }
     }
 }
