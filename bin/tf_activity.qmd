@@ -285,15 +285,15 @@ Idents(seurat) <- "seurat_clusters"
 ```{r }
 
 DefaultAssay(seurat) <- "chromvar"
-p <- FeaturePlot(seurat, features = ConvertMotifID(seurat[['chromvar']], name = c("CREB1", "FOXP3")))
-
-p <- FeaturePlot(seurat, 
-                 features =  convert_chromvar_features(seurat, features = "POU2F2")$feature_name,
-                 min.cutoff = 'q10', 
-                 max.cutoff = 'q90',
-                 reduction = reduction_sel,
-                 cols = c("lightgrey", "darkgreen"),
-                 pt.size = 0.1)
+# p <- FeaturePlot(seurat, features = ConvertMotifID(seurat[['chromvar']], name = c("CREB1", "FOXP3")))
+# 
+# p <- FeaturePlot(seurat, 
+#                  features =  convert_chromvar_features(seurat, features = "POU2F2")$feature_name,
+#                  min.cutoff = 'q10', 
+#                  max.cutoff = 'q90',
+#                  reduction = reduction_sel,
+#                  cols = c("lightgrey", "darkgreen"),
+#                  pt.size = 0.1)
 
 
 
