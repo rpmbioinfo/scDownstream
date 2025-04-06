@@ -17,9 +17,11 @@ book:
   - integrate_datasets.qmd
   - integrate_modalities.qmd
   - clustering.qmd
+  - set_clusters.qmd
   - cell_annotation.qmd
   - tf_activity.qmd
   - cellchat.qmd
+  - project_comparisons.qmd
 
   
   sidebar:

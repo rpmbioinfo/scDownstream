@@ -1,0 +1,527 @@
+---
+params:
+  seurat: "../results/seurat/seurat_after_qc.RDS"
+  pipeline: "multiome"
+  integrate_datasets: true
+  outcomes: ["Group"]
+  sketch_cells: false
+  rna_normalization_method: "log"
+  species: "Homo sapiens"
+  cpus: 3
+  cc_avg_method: "triMean"
+  cc_min_cells: 10
+  cc_pathways: ["LCK", 'SELPLG']
+  cc_diagrams: "chord"
+  cc_subset_receiver: ["CD14 Mono", "CD16 Mono", "CD4 Naive"]
+  cc_subset_sender: ["CD14 Mono", "CD16 Mono", "CD4 Naive"]
+  cc_sketch: false
+  cc_subset: ["CD14 Mono", "CD16 Mono"]
+  
+---
+
+## Cell-cell interactome
+
+```{r setup, warning=F, message=F, echo=knitr::is_html_output(), eval=T}
+
+selected_packages <- c("Seurat",
+                       "Signac",
+                       'tidyverse',
+                       'readxl',
+                       'patchwork',
+                       'clustree', 
+                       'DT',
+                       'ggrastr',
+                       'presto', 
+                       'SingleCellExperiment',
+                       'CellChat')
+#invisible(extrafont::font_import(prompt = F))
+selected_font <- "Arial"
+selected_font_pdf <- "ArialMT"
+#extrafont::loadfonts(device = "win")
+invisible(lapply(selected_packages, library, character.only = TRUE))
+
+if(knitr::is_html_output()){
+  eval_set <- TRUE
+  eval_pdf <- FALSE
+  echo_set <- TRUE
+  message_set <- FALSE
+} else {
+  eval_set <- FALSE
+  eval_pdf <- TRUE
+  echo_set <- FALSE
+  message_set <- FALSE
+}
+
+source("run_funcs.R")
+
+
+knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width = 10, fig.height = 9 ,cache.lazy = F, results = "asis")
+
+```
+
+```{r echo=F}
+
+run_gex <- FALSE
+run_atac <- FALSE
+run_adt <- FALSE
+
+multimodal <- FALSE
+
+
+if(params$pipeline == "atac"){
+  reduction_sel <- 'umap.atac'
+  if(params$integrate_datasets){
+    reduction_sel <- 'umap.atac.int'
+  }
+}
+
+if(params$pipeline == "rna"){
+  reduction_sel <- 'umap.rna'
+  if(params$integrate_datasets){
+    reduction_sel <- 'umap.rna.int'
+  }
+}
+
+if(params$pipeline %in% c("cite", 'multiome', 'teaseq')){
+  multimodal <- TRUE
+  reduction_sel <- "wnn.umap"
+}
+
+if(params$pipeline != "atac"){
+  run_gex <- TRUE
+}
+
+if(params$pipeline %in% c("atac", 'multiome', 'teaseq')){
+  run_atac <- TRUE
+}
+
+if(params$pipeline %in% c("cite", 'teaseq')){
+  run_adt <- TRUE
+}
+
+if(params$pipeline %in% c("cite", 'teaseq', 'multiome')){
+  reduction_sel <- "wnn.umap"
+}
+
+```
+
+## Analysis Parameters
+```{r echo=FALSE}
+
+df <- params_to_df(params)
+df
+
+
+```
+
+
+### Load Data
+```{r }
+seurat <- readRDS(params$seurat)
+if(params$rna_normalization_method == "sct"){
+  DefaultAssay(seurat) <- 'SCT'
+} else {
+  DefaultAssay(seurat) <- 'RNA'
+}
+```
+
+
+## Create CellChat object
+```{r }
+
+seurat_ls <- SplitObject(seurat, split.by = params$outcomes[1])
+
+for(i in names(seurat_ls)){
+  if(!params$sketch_cells){
+    seurat_ls[[i]][['RNA']]$counts <- as(object = seurat_ls[[i]][['RNA']]$counts, Class = "dgCMatrix")
+    seurat_ls[[i]][['RNA']]$data <- as(object = seurat_ls[[i]][['RNA']]$data, Class = "dgCMatrix")
+  } 
+  
+  if(!"samples" %in% colnames(seurat@meta.data)){
+    seurat_ls[[i]]$samples <- seurat_ls[[i]]$SampleID
+  }
+}
+
+
+if(params$species == "Mus musculus"){
+  CellChatDB <- CellChatDB.mouse
+  ppi <- PPI.mouse
+} else {
+  CellChatDB <- CellChatDB.human
+  ppi <- PPI.human
+} 
+
+ccLS <- sapply(names(seurat_ls), simplify = F, USE.NAMES = T, function(x){
+  if(params$sketch_cells){
+    cc <- createCellChat(object = seurat_ls[[x]], group.by = "cell_type", assay = "sketch")
+  } else {
+    cc <- createCellChat(object = seurat_ls[[x]], group.by = "cell_type", assay = "RNA")
+  }
+  
+  cc@DB <- CellChatDB
+  return(cc)
+})
+
+
+
+#
+rm(seurat_ls)
+
+```
+
+## Preprocess data for cell-cell analysis
+```{r}
+future::plan("multisession", workers = params$cpu)
+
+
+for(i in names(ccLS)){
+  ccLS[[i]] <- subsetData(ccLS[[i]]) 
+  ccLS[[i]] <- identifyOverExpressedGenes(ccLS[[i]])
+  ccLS[[i]] <- identifyOverExpressedInteractions(ccLS[[i]])
+}
+
+#cellChat <- projectData(cellChat, ppi)
+```
+
+## Infer cellular communication network
+```{r }
+for(i in names(ccLS)){
+  ccLS[[i]] <- computeCommunProb(ccLS[[i]], type = params$cc_avg_method)
+  ccLS[[i]] <- filterCommunication(ccLS[[i]], min.cells = params$cc_min_cells)
+
+  ccLS[[i]] <- computeCommunProbPathway(ccLS[[i]])
+  ccLS[[i]]<- aggregateNet(ccLS[[i]])
+
+}
+
+
+
+all_subsets <- unique(unlist(lapply(ccLS, function(x){levels(x@idents)}), use.names = F))
+for(i in names(ccLS)){
+  ccLS[[i]] <- liftCellChat(ccLS[[i]], group.new = all_subsets)
+}
+
+
+
+
+cellChat <- mergeCellChat(ccLS, add.names = names(ccLS))
+
+
+compareInteractions(cellChat, show.legend = F, group = seq(1, length(names(ccLS))))
+
+compareInteractions(cellChat, show.legend = F, group = seq(1, length(names(ccLS))), measure = "weight")
+
+
+weight.max <- getMaxWeight(ccLS, attribute = c("idents","count"))
+
+for (i in 1:length(ccLS)) {
+  par(mfrow = c(1,1), xpd=TRUE)
+  netVisual_circle(ccLS[[i]]@net$count, weight.scale = T, label.edge= F, edge.weight.max = weight.max[2], edge.width.max = 12, title.name = paste0("Number of interactions - ", names(ccLS)[i]))
+}
+
+
+all_subsets <- levels(unique(unlist(cellChat@idents, use.names = F)))
+
+if(length(params$cc_subset) == 1){
+  if(params$cc_subset == "all"){
+         idents_use <- NULL
+         subset_cc <- FALSE
+      } else {
+        idents_use <- params$cc_subset
+        subset_cc <- TRUE
+      }
+  } else {
+      idents_use <- params$cc_subset
+      subset_cc <- TRUE
+}
+
+
+```
+`r if(subset_cc){"## Subset on specific cell types"}`
+```{r eval=subset_cc, echo=subset_cc & echo_set}
+#par(mfrow = c(length(ccLS),1), xpd=TRUE)
+
+
+for (i in 1:length(ccLS)) {
+  par(mfrow = c(1,1), xpd=TRUE)
+  netVisual_circle(ccLS[[i]]@net$count, 
+                   weight.scale = T, 
+                   label.edge= F, 
+                   edge.weight.max = weight.max[2], 
+                   edge.width.max = 12, 
+                   idents.use = params$cc_subset,
+                   title.name = paste0("Number of interactions - ", names(ccLS)[i]))
+}
+
+```
+
+## Compare Cell types in 2D space
+This analysis allows more easily to identify cell types with significant changes across conditions. 
+
+```{r }
+
+
+for(i in 1:length(ccLS)){
+  ccLS[[i]] <- netAnalysis_computeCentrality(ccLS[[i]])
+}
+
+num.link <- sapply(ccLS, function(x) {rowSums(x@net$count) + colSums(x@net$count)-diag(x@net$count)})
+weight.MinMax <- c(min(unlist(num.link)), max(unlist(num.link))) 
+
+for (i in 1:length(ccLS)) {
+  
+  p <- netAnalysis_signalingRole_scatter(ccLS[[i]], title = names(ccLS)[i], weight.MinMax = weight.MinMax)
+  print(p)
+}
+
+
+```
+
+
+## Cell-cell network visualization
+### Pathway level interactions
+#### Explore all pathways
+```{r }
+
+#
+cellChat <- computeNetSimilarityPairwise(cellChat, type = "functional")
+
+pathway_union <- unique(unlist(lapply(names(ccLS), function(x){ ccLS[[x]]@netP$pathways }), use.names = F))
+
+lapply(names(ccLS), function(x){
+  netAnalysis_signalingRole_heatmap(ccLS[[x]], pattern = "outgoing", signaling = pathway_union, title = x, width = 9, height = 6)
+})
+
+lapply(names(ccLS), function(x){
+  netAnalysis_signalingRole_heatmap(ccLS[[x]], pattern = "incoming", signaling = pathway_union, title = x, width = 9, height = 6)
+})
+
+lapply(names(ccLS), function(x){
+  netAnalysis_signalingRole_heatmap(ccLS[[x]], pattern = "all", signaling = pathway_union, title = x, width = 9, height = 6)
+})
+
+
+
+
+```
+
+#### Pathways of interest
+```{r }
+
+pathways.show <- params$cc_pathways
+
+# 
+# get_connected_pathways <- function(cellChat, idents = NULL) {
+#   # Ensure netP$prob exists
+#   if (!"prob" %in% names(cellChat@netP)) {
+#     stop("No probability matrix found in cellChat@netP. Ensure netAnalysis_computeCentrality was run.")
+#   }
+# 
+#   # Extract the probability matrix
+#   prob_matrix <- cellChat@netP$prob  # 3D array: rows (senders) x columns (receivers) x pathways
+# 
+#   # Get dimension names
+#   sender_cells <- dimnames(prob_matrix)[[1]]
+#   receiver_cells <- dimnames(prob_matrix)[[2]]
+#   pathway_names <- dimnames(prob_matrix)[[3]]
+# 
+#   # Initialize list to store results
+#   results <- list()
+# 
+#   # Iterate through pathways
+#   for (pathway in pathway_names) {
+#     matrix_slice <- prob_matrix[, , pathway]  # Extract 2D matrix for the pathway
+# 
+#     # Find nonzero interactions (senders and receivers)
+#     sender_receiver_pairs <- which(matrix_slice > 0, arr.ind = TRUE)
+# 
+#     if (nrow(sender_receiver_pairs) > 0) {
+#       sender_idents <- sender_cells[sender_receiver_pairs[, 1]]
+#       receiver_idents <- receiver_cells[sender_receiver_pairs[, 2]]
+# 
+#       # Create a temporary data frame
+#       pathway_df <- data.frame(
+#         pathway = rep(pathway, length(sender_idents)),
+#         sender_ident = sender_idents,
+#         receiver_ident = receiver_idents,
+#         stringsAsFactors = FALSE
+#       )
+# 
+#       # Append to results list
+#       results[[pathway]] <- pathway_df
+#     }
+#   }
+# 
+#   # Combine all results into one data frame
+#   result_df <- do.call(rbind, results)
+# 
+#   # Apply filtering if idents is provided
+#   if (!is.null(idents)) {
+#     result_df <- result_df[result_df$sender_ident %in% idents | result_df$receiver_ident %in% idents, ]
+#   }
+# 
+#   return(result_df)
+# }
+
+
+# 
+# all_pathway <- bind_rows(lapply(names(ccLS), function(x){
+#   if(subset_cc){
+#     pw <- get_connected_pathways(ccLS[[x]], idents = params$cc_subset)
+#   } else {
+#     pw <- get_connected_pathways(ccLS[[x]], idents = params$cc_subset)
+#   }
+#   df <- pw %>%
+#         mutate(Condition = x)
+# })) %>%
+#   group_by(pathway) %>%
+#   mutate(n_conditions = n_distinct(Condition),
+#          Detected_in = paste(unique(Condition), collapse = "; "),
+#          Sender = paste(unique(sender_ident), collapse = '; '),
+#          Receiver = paste(unique(receiver_ident), collapse = '; ')) %>%
+#   ungroup() %>%
+#   dplyr::select(-Condition, -sender_ident, -receiver_ident) %>%
+#   unique() %>%
+#   dplyr::arrange(desc(n_conditions))
+
+
+
+
+
+
+for(i in pathways.show){
+  weight.max <- getMaxWeight(ccLS, slot.name = c("netP"), attribute = i)
+  for(j in names(ccLS)){
+    par(mfrow = c(1,1), xpd=TRUE)
+    netVisual_aggregate(ccLS[[j]], 
+                        signaling = i, 
+                        layout = "circle", 
+                        edge.weight.max = weight.max[1], 
+                        edge.width.max = 10, 
+                        signaling.name = paste(i, j),
+                        idents.use = idents_use,
+                        remove.isolate = F)
+  
+  }
+}
+
+```
+
+### Ligand-receptor pair communication probability per pathway
+```{r }
+comm_sub_tmp <- bind_rows(lapply(names(ccLS), function(x){
+    df <- subsetCommunication(ccLS[[x]]) %>%
+        mutate(dataset = x)
+  }))
+
+
+if(subset_cc){
+    comm_sub <- comm_sub_tmp %>%
+              dplyr::filter(source %in% params$cc_subset | target %in% params$cc_subset)
+} else {
+  comm_sub <- comm_sub_tmp
+}
+
+
+
+if(knitr::is_html_output()){
+  datatable(comm_sub,
+                        caption = "Ligand-receptor pair activity per pathway",
+                        extensions = 'Buttons',
+                          options = list(dom = 'lfrtpB',
+                                         buttons = list(
+                                                      list(extend = 'csv', title = "ligand_receptor_pairs"),
+                                                      list(extend = 'excel', title = "ligand_receptor_pairs")),
+                                         lengthMenu = list(c(10,25,50,-1),
+                                                           c(10,25,50,"All")))) %>%
+                    formatSignif(columns = c("pval"), digits = 3 ) %>%
+                    formatRound(columns = c("prob"), digits = 3)
+  
+} 
+
+lapply(intersect(pathways.show, comm_sub$pathway_name), function(x){
+  comm_sub_path <- comm_sub %>%
+                    dplyr::filter(pathway_name == x) 
+ 
+  if(dim(comm_sub_path)[1] > 0){
+    if(length(unique(comm_sub_path$dataset)) > 1){
+      p1 <- netVisual_bubble(cellChat,
+                       pairLR.use = comm_sub_path[c("interaction_name")], 
+                       angle.x = 45, 
+                       comparison = c(1, 2), 
+                       max.dataset = 2,
+                       remove.isolate = T,
+                       title.name = paste("Increased signaling in", names(ccLS)[1], "vs", names(ccLS)[2] ))
+      p2 <- netVisual_bubble(cellChat,
+                       pairLR.use = comm_sub_path[c("interaction_name")], 
+                       angle.x = 45, 
+                       comparison = c(1, 2), 
+                       max.dataset = 1,
+                       remove.isolate = T,
+                       title.name = paste("Decreased signaling in", names(ccLS)[1], "vs", names(ccLS)[2] ))
+      p1 + p2
+    } else {
+      dataset_select <- unique(comm_sub_path$dataset)
+      netVisual_bubble(ccLS[[dataset_select]], pairLR.use = comm_sub_path[c("interaction_name")], angle.x = 45, title.name = dataset_select )
+    }
+  }
+})
+
+
+netVisual_bubble(cellChat,
+                       signaling = "LCK",
+                       angle.x = 45, 
+                       comparison = c(1, 2), 
+                       #max.dataset = 2,
+                       remove.isolate = T,
+                       title.name = paste("Increased signaling in", names(ccLS)[1], "vs", names(ccLS)[2] ))
+```
+
+### Ligand-receptor pair Differential expression
+```{r }
+pos.dataset = names(ccLS)[2]
+features.name = paste0(pos.dataset, ".merged")
+shared_idents <- Reduce(intersect,lapply(ccLS, function(x){
+  unique(x@meta$cell_type)
+}))
+
+cellChat <- identifyOverExpressedGenes(cellChat, 
+                                       group.dataset = "datasets", 
+                                       pos.dataset = pos.dataset, 
+                                       features.name = features.name, 
+                                       idents.use = shared_idents,
+                                       only.pos = FALSE, 
+                                       thresh.pc = 0.1, 
+                                       thresh.fc = 0.05,
+                                       thresh.p = 0.05, 
+                                       group.DE.combined = FALSE) 
+
+
+net <- netMappingDEG(cellChat, features.name = features.name, variable.all = TRUE)
+
+
+
+lapply(pathways.show, function(x){
+  comm_sub_filt <- comm_sub[comm_sub$pathway_name == x,]
+  feats <- unique(unlist(str_split(unique(comm_sub_filt$interaction_name), pattern = "_", simplify = F)))
+  feats <- intersect(feats, row.names(seurat))
+  #print(feats)
+  lapply(feats, function(y){
+    VlnPlot(seurat, features = y, split.by = params$outcomes, ncol =  1, group.by = "cell_type", pt.size = 0) + ggtitle(paste(y, "-", x, "pathway"))
+  })
+  #plotGeneExpression(cellChat, signaling = x, split.by = "datasets", colors.ggplot = T, type = "violin")
+})
+
+#
+
+
+
+```
+
+
+### Save CellChat object
+```{r save}
+cellChat <- addReduction(cellChat, dr = seurat@reductions[[reduction_sel]], dr.name = "umap")
+saveRDS(cellChat, "cellchat_object.RDS")
+saveRDS(ccLS, "cellchat_list.RDS")
+```

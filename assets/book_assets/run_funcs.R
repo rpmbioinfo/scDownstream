@@ -294,3 +294,37 @@ cluster_frequency_plot <- function(seurat,
 }
 
 
+convert_chromvar_features <- function(seurat, features = "all", assay = "ATAC"){
+  motif_df <- data.frame("id" = names(seurat[["ATAC"]]@motifs@motif.names),
+                         'name' = unlist(seurat[["ATAC"]]@motifs@motif.names, use.names = F),
+                         'feature_name' = row.names(seurat[['chromvar']]@data))
+  
+  
+  if(length(features) > 1){
+    name_int <- length(intersect(motif_df$name, features))
+    feat_int <- length(intersect(motif_df$feature_name, features))
+    if(name_int > feat_int){
+      motif_df <-  motif_df %>%
+        dplyr::filter(name %in% features)
+    } else {
+      motif_df <-  motif_df %>%
+        dplyr::filter(feature_name %in% features)
+    }
+  } else {
+    if(features != "all"){
+      name_int <- length(intersect(motif_df$name, features))
+      feat_int <- length(intersect(motif_df$feature_name, features))
+      if(name_int > feat_int){
+        motif_df <-  motif_df %>%
+          dplyr::filter(name %in% features)
+      } else {
+        motif_df <-  motif_df %>%
+          dplyr::filter(feature_name %in% features)
+      }
+    }
+  } 
+  
+  return(motif_df)
+}
+
+

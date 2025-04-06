@@ -29,7 +29,9 @@ include { DIMENSION_REDUCTION } from './modules/dim_reduce.nf'
 include { INTEGRATE_DATASETS } from './modules/integrate_datasets.nf'
 include { MULTIMODAL_INTEGRATION } from './modules/multimodal_integration.nf'
 include { CLUSTERING } from './modules/clustering.nf'
+include { SET_CLUSTERS } from './modules/clustering.nf'
 include { CELL_ANNOTATION } from './modules/cell_annotation.nf'
+include { CHROMVAR } from './modules/chromvar.nf'
 include { BOOK_RENDER } from './modules/render.nf'
 
 
@@ -88,10 +90,9 @@ workflow {
     params.annotation = getGenomeAttribute('annotation')
     params.mito_regex = getGenomeAttribute('mito_regex')
     params.ribo_regex = getGenomeAttribute('ribo_regex')
-    params.bsgenome = getGenomeAttribute('bs_genome')
-    params.scimilarity_dictionary = params.annotations["scimilarity"]["celltype_dictionary"]
+    params.scimilarity_dictionary = params.annotations['scimilarity']["celltype_dictionary"]
 
-    params.name = getGenomeAttribute('name')
+    params.species = getGenomeAttribute('name')
 
     if(params.input_type == "counts") {
         Channel.fromPath(  "${params.input}/**/outs/filtered_*bc_matrix.h5", checkIfExists : true )
@@ -245,6 +246,17 @@ workflow {
                 params.clustering_script,
                 book_assets,
                 params.pipeline,
+                params.integrate_datasets,
+                params.sketch_cells,
+                params.rna_normalization_method)
+        | set { cluster_ch }
+
+        quarto_ch = quarto_ch.concat(cluster_ch.quarto)
+        
+        SET_CLUSTERS(cluster_ch.seurat,
+                params.clusterset_script,
+                book_assets,
+                params.pipeline,
                 params.clustering2_res,
                 params.integrate_datasets,
                 params.outcomes,
@@ -252,18 +264,20 @@ workflow {
                 params.de_method,
                 params.de_latent_vars,
                 params.de_min_pct,
-                params.de_logfc)
-        | set { cluster_ch }
+                params.de_logfc,
+                params.markers_rna,
+                params.markers_adt,
+                params.rna_normalization_method)
+        | set { cluster_set_ch }
 
-        quarto_ch = quarto_ch.concat(cluster_ch.quarto)
-        
+        quarto_ch = quarto_ch.concat(cluster_set_ch.quarto)
     }
 
 
 
 
     if (!['QC', "DR", 'INT', "CLUST"].contains(params.stop_after) ) {
-        CELL_ANNOTATION(cluster_ch.seurat,
+        CELL_ANNOTATION(cluster_set_ch.seurat,
                         params.annotation_script,
                         book_assets,
                         params.pipeline,
@@ -284,6 +298,19 @@ workflow {
         | set { cell_ann_ch }
 
         quarto_ch = quarto_ch.concat(cell_ann_ch.quarto)
+    }
+
+    if (params.pipeline in ["multiome", 'teaseq', 'atac'] & params.recall_peaks) {
+        CHROMVAR(cell_ann_ch.seurat,
+            params.chromvar_script,
+            book_assets,
+            params.pipeline,
+            params.integrate_datasets,
+            params.species)
+        | set { chromvar_ch }
+
+        quarto_ch = quarto_ch.concat(chromvar_ch.quarto)
+
     }
 
     BOOK_RENDER(scripts_ch, 

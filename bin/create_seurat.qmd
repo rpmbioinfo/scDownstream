@@ -193,6 +193,7 @@ if(params$pipeline %in% c("atac", 'multiome', 'teaseq')){
   } else {
     seurat[['ATAC']] <- chrom_assay
   }
+  
 } 
 
 if(params$pipeline %in% c("cite", 'cite_crispr', 'teaseq')){

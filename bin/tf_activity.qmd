@@ -3,13 +3,11 @@ params:
   seurat: "../results/seurat/seurat_annotated.RDS"
   pipeline: "multiome"
   integrate_datasets: true
-  outcomes: "none"
-  BSgenome: "BSgenome.Mmulatta.NCBI.Mmul10_1.0.0.tar.gz"
-  species: "Macaca mulatta"
-
+  species: "Homo sapiens"
+  cpus: 2
 ---
 
-## Transcription Factor Activity
+## Transcription Factor Activity Computation
 
 ```{r setup, warning=F, message=F, echo=knitr::is_html_output(), eval=T}
 
@@ -21,10 +19,12 @@ selected_packages <- c("Seurat",
                        'clustree', 
                        'DT',
                        'ggrastr',
-                       'chromVARmotifs',
-                       'JASPAR2022',
+                       'presto', 
+                       'SingleCellExperiment',
                        'TFBSTools',
-                       'BSgenomeForge')
+                       "chromVARmotifs",
+                       'chromVAR',
+                       'motifmatchr')
 #invisible(extrafont::font_import(prompt = F))
 selected_font <- "Arial"
 selected_font_pdf <- "ArialMT"
@@ -46,7 +46,7 @@ if(knitr::is_html_output()){
 source("run_funcs.R")
 
 
-knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width = 10, cache.lazy = F)
+knitr::opts_chunk$set(echo = echo_set,  warning = FALSE, message = FALSE, fig.align = "center", eval = params$eval, fig.width = 10, fig.height = 9 ,cache.lazy = F, results = "asis")
 
 ```
 
@@ -66,14 +66,8 @@ if(params$pipeline == "atac"){
   }
 }
 
-if(params$pipeline == "rna"){
-  reduction_sel <- 'umap.rna'
-  if(params$integrate_datasets){
-    reduction_sel <- 'umap.rna.int'
-  }
-}
 
-if(params$pipeline %in% c("cite", 'cite_crispr', 'multiome', 'teaseq')){
+if(params$pipeline %in% c("cite", 'multiome', 'teaseq')){
   multimodal <- TRUE
   reduction_sel <- "wnn.umap"
 }
@@ -86,347 +80,228 @@ if(params$pipeline %in% c("atac", 'multiome', 'teaseq')){
   run_atac <- TRUE
 }
 
-if(params$pipeline %in% c("cite", 'cite_crispr', 'teaseq')){
-  run_adt <- TRUE
-}
-
-if(params$pipeline %in% c("cite", 'cite_crispr', 'teaseq', 'multiome')){
+if(params$pipeline %in% c('teaseq', 'multiome')){
   reduction_sel <- "wnn.umap"
 }
 
 ```
 
-### Analysis Parameters
+## Analysis Parameters
 ```{r echo=FALSE}
 
 df <- params_to_df(params)
 df
+
+
 ```
+
 
 ### Load Data
 ```{r }
 seurat <- readRDS(params$seurat)
 
-```
-
-
-### Add Transcription Factor motifs
-
-
-```{r eval=multimodal, echo=multimodal & echo_set}
-devtools::install_local(params$BSgenome, force = T, quiet = T)
-
-bsgenome_name <- gsub("_1.0.0.tar.gz", "", basename(test))
-gen <- getBSgenome(bsgenome_name)
-seqlevelsStyle(gen) <- 
-
-if(params$species == "Mus musculus"){
-  data(mouse_pwms_v2)
-  seurat <- AddMotifs(seurat, genome = bsgenome_name, pfm = mouse_pwms_v2)
-} else if(params$species %in% c("Homo sapiens", "Macaca mulatta")){
-    data(human_pwms_v2)
-    seurat <- AddMotifs(seurat, genome = bsgenome_name, pfm = human_pwms_v2)
-} else {
-  pfm <- getMatrixSet(
-          x = JASPAR2022,
-          opts = list(collection = "CORE", tax_group = 'vertebrates', all_versions = FALSE))
- 
-  seurat <- AddMotifs(seurat, genome = bsgenome_name, pfm = pfm)
-}
-
-seurat <- AddMotifs(seurat, genome = BSgenome.Hsapiens.UCSC.hg38, pfm = human_pwms_v2)
-
-clustree_wNN <- clustree(seurat, prefix = "wsnn_res.") 
-## Optimal res at 0.3
-clustree_wNN <- clustree_arrow(clustree_wNN, selected_res = params$clustering2_res)
-clustree_wNN
-
-
-select_clust_res <- setNames(seurat[[paste0("wsnn_res.", params$clustering2_res)]][,1],colnames(seurat))
-
-
-seurat$seurat_clusters <- select_clust_res
-seurat$seurat_clusters <- factor(seurat$seurat_clusters, 
-                                 levels = gtools::mixedsort(levels(seurat$seurat_clusters)))
-Idents(seurat) <- "seurat_clusters"
-
-
-
-DimPlot(seurat, group.by = "seurat_clusters", reduction = reduction_sel, raster = T )
-
-```
-
-```{r eval=params$pipeline == 'rna', echo=params$pipeline == 'rna' & echo_set}
-
-
-seurat <- FindClusters(seurat, verbose = FALSE, resolution = seq(0.1, 1.2, by = 0.1), algorithm = 4)
-
-clustree_wNN <- clustree(seurat, prefix = "RNA_snn_res.") 
-## Optimal res at 0.3
-clustree_wNN <- clustree_arrow(clustree_wNN, selected_res = params$clustering2_res)
-clustree_wNN
-
-select_clust_res <- setNames(seurat[[paste0("RNA_snn_res.", params$clustering2_res)]][,1],colnames(seurat))
-
-seurat$seurat_clusters <- select_clust_res
-Idents(seurat) <- "seurat_clusters"
-
-
-
-DimPlot(seurat, group.by = "seurat_clusters", reduction = reduction_sel, raster = T )
-
-
-
-```
-
-```{r eval=params$pipeline == 'atac', echo=params$pipeline == 'atac' & echo_set}
-
-
-seurat <- FindClusters(seurat, verbose = FALSE, resolution = seq(0.1, 1.2, by = 0.1), algorithm = 4)
-
-clustree_wNN <- clustree(seurat, prefix = "ATAC_snn_res.") 
-## Optimal res at 0.3
-clustree_wNN <- clustree_arrow(clustree_wNN, selected_res = params$clustering2_res)
-clustree_wNN
-
-select_clust_res <- setNames(seurat[[paste0("ATAC_snn_res.", params$clustering2_res)]][,1],colnames(seurat))
-
-seurat$seurat_clusters <- select_clust_res
-Idents(seurat) <- "seurat_clusters"
-
-DimPlot(seurat, group.by = "seurat_clusters", reduction = reduction_sel , raster = T)
-
-```
-
-
-### Cluster markers
-`r if(run_gex){"#### RNA Markers"}`
-```{r eval=run_gex, echo=run_gex & echo_set}
-DefaultAssay(seurat) <- 'RNA'
-
-rna_markers <- FindAllMarkers(seurat, only.pos = T, test.use = 'wilcox',
-                              logfc.threshold = 0.05,
-                              min.pct = 0.01) %>%
-                dplyr::filter(avg_log2FC > 1) %>%
-                dplyr::filter(p_val_adj < 0.01)
-
-top_rna_markers <- rna_markers %>%
-                  group_by(cluster) %>%
-                  slice_max(., order_by = avg_log2FC, n = 10) %>%
-                  ungroup()
-
-
-
-if(knitr::is_html_output()){
-  datatable(rna_markers,
-                        caption = "RNA Modality cluster markers",
-                        extensions = 'Buttons',
-                          options = list(dom = 'lfrtpB',
-                                         buttons = list(
-                                                      list(extend = 'csv', title = "RNA_cluster_markers"),
-                                                      list(extend = 'excel', title = "RNA_cluster_markers")),
-                                         lengthMenu = list(c(10,25,50,-1),
-                                                           c(10,25,50,"All")))) %>%
-                    formatSignif(columns = c("p_val", "p_val_adj"), digits = 3 ) %>%
-                    formatRound(columns = c("avg_log2FC", "pct.1", "pct.2"), digits = 3)
-  
-  
-} else {
-  knitr::kable(top_rna_markers)
-}
-
-
-p <- DoHeatmap(seurat, features = unique(top_rna_markers$gene), raster = T) + NoLegend()
-
-
-hm_filename <- "cluster_markers_rna_heatmap.jpeg"
-ggsave(p, filename = hm_filename, device = "jpeg", dpi = 300, units = "in")
-
-p
-
-
-```
-
-`r if(run_atac){"#### ATAC Markers"}`
-```{r eval=run_atac, echo=run_atac & echo_set}
 DefaultAssay(seurat) <- 'ATAC'
 
-atac_markers <- FindAllMarkers(seurat, only.pos = T, test.use = 'wilcox',
-                              logfc.threshold = 0.05,
-                              min.pct = 0.01) %>%
-                dplyr::filter(avg_log2FC > 1) %>%
-                dplyr::filter(p_val_adj < 0.01) 
-
-top_atac_markers <- atac_markers %>%
-                  group_by(cluster) %>%
-                  slice_max(., order_by = avg_log2FC, n = 10) %>%
-                  ungroup()
-
-DefaultAssay(seurat) <- "ATAC"
-peak_annot <- ClosestFeature(seurat, atac_markers$gene) %>%
-                dplyr::select(gene_name, gene_id, gene_biotype, type, query_region, closest_region, distance)
-
-atac_markers <- atac_markers %>%
-                dplyr::rename(peak_region = "gene") %>%
-                left_join(peak_annot, by = c("peak_region" = "query_region")) %>%
-                unique()
-
-top_atac_markers <- top_atac_markers %>%
-                dplyr::rename(peak_region = "gene") %>%
-                left_join(peak_annot, by = c("peak_region" = "query_region")) %>%
-                unique() %>%
-                dplyr::select(-gene_id, -gene_biotype, -closest_region)
+```
 
 
-if(knitr::is_html_output()){
-  datatable(atac_markers,
-                        caption = "ATAC Modality cluster markers",
-                        extensions = 'Buttons',
-                          options = list(dom = 'lfrtpB',
-                                         buttons = list(
-                                                      list(extend = 'csv', title = "ATAC_cluster_markers"),
-                                                      list(extend = 'excel', title = "ATAC_cluster_markers")),
-                                         lengthMenu = list(c(10,25,50,-1),
-                                                           c(10,25,50,"All")))) %>%
-                    formatSignif(columns = c("p_val", "p_val_adj"), digits = 3 ) %>%
-                    formatRound(columns = c("avg_log2FC", "pct.1", "pct.2"), digits = 3)
-  
+## Load motifs
+Motif matrices, stored in PFM format (or PWM), are derived from prior ChIP-Seq experiments across tissues or species. Other technologies used for the generation of PFMs are Protein-binding microarrays, SELEX, etc. Together, they are the basis of establishing which set of sequences are bound by a given transcription factor. 
+
+Databases like [CISBP](https://cisbp.ccbr.utoronto.ca/), or [JASPAR](https://jaspar.elixir.no/), store these PFMs, which can be leveraged to scan chromatin for enrichment and activity.
+
+```{r echo= echo_set }
+if(params$species == "Mus musculus"){
+  data("mouse_pwms_v2")
+  pfm <- mouse_pwms_v2
+  BiocManager::install("BSgenome.Mmusculus.UCSC.mm10", update = F)
+  library(BSgenome.Mmusculus.UCSC.mm10)
+  bsg <- BSgenome.Mmusculus.UCSC.mm10
   
 } else {
-  knitr::kable(top_atac_markers)
+  data("human_pwms_v2")
+  pfm <- human_pwms_v2
+  if(params$species == "Homo sapiens"){
+    BiocManager::install("BSgenome.Hsapiens.UCSC.hg38", update = F)
+    library(BSgenome.Hsapiens.UCSC.hg38)
+    bsg <-  BSgenome.Hsapiens.UCSC.hg38
+  } else if(params$species == "Macaca mulatta"){
+    BiocManager::install("BSgenome.Mmulatta.UCSC.rheMac10", update = F)
+    library(BSgenome.Mmulatta.UCSC.rheMac10)
+    bsg <-  BSgenome.Mmulatta.UCSC.rheMac10
+
+  }
 }
+
+```
+
+
+```{r, message=F, warning=F, echo=echo_set}
+
+seqlevelsStyle(Annotation(seurat)) <- "UCSC"
+main.chroms <- standardChromosomes(bsg)
+keep.peaks <- row.names(seurat)[as.logical(seqnames(granges(seurat)) %in% main.chroms)]
+seurat[["ATAC"]] <- subset(seurat[["ATAC"]], features = keep.peaks )
+
+motif.matrix <- CreateMotifMatrix(
+  features = granges(seurat),
+  pwm = pfm,
+  genome = bsg
+)
+
+motif_obj <- CreateMotifObject(pwm = pfm, 
+                               data = motif.matrix)
+Motifs(seurat) <- motif_obj
+
+```
+
+
+## chromVAR
+[chromVAR](https://pubmed.ncbi.nlm.nih.gov/28825706/) is a tool for inferring transcription factor-associated accessibility from peaks. It calculates an enrichment of TF activity by calculating gain or loss of accessibility within peaks sharing the same motifs while controlling for technical biases. 
+
+```{r eval=multimodal & params$sketch_cells & params$pipeline %in% c("cite","teaseq"), echo=multimodal & echo_set & params$sketch_cells}
+
+library(BiocParallel)
+
+if(params$cpus <= 3){
+  register(MulticoreParam(params$cpus))
+} else {
+  register(MulticoreParam(params$cpus -1))
+}
+
+
+
+seurat <- RunChromVAR(seurat, 
+                      genome = bsg,
+                      assay = "ATAC",
+                      verbose = T)
 
 
 ```
 
-`r if(params$pipeline == 'atac'){"#### Gene Activity Markers"}`
-```{r eval=params$pipeline == 'atac', echo=params$pipeline == 'atac' & echo_set}
-
-seurat[['RNA']] <- GeneActivity(seurat, assay = 'ATAC')
-DefaultAssay(seurat) <- 'RNA'
-
-rna_markers <- FindAllMarkers(seurat, only.pos = T, test.use = 'wilcox',
-                              logfc.threshold = 0.05,
-                              min.pct = 0.01) %>%
-                dplyr::filter(avg_log2FC > 1) %>%
-                dplyr::filter(p_val_adj < 0.01)
-
-top_rna_markers <- rna_markers %>%
-                  group_by(cluster) %>%
-                  slice_max(., order_by = avg_log2FC, n = 10) %>%
-                  ungroup()
-
-
-
-if(knitr::is_html_output()){
-  datatable(rna_markers,
-                        caption = "Gene Activity Modality cluster markers",
-                        extensions = 'Buttons',
-                          options = list(dom = 'lfrtpB',
-                                         buttons = list(
-                                                      list(extend = 'csv', title = "gene_activity_cluster_markers"),
-                                                      list(extend = 'excel', title = "gene_activity_cluster_markers")),
-                                         lengthMenu = list(c(10,25,50,-1),
-                                                           c(10,25,50,"All")))) %>%
-                    formatSignif(columns = c("p_val", "p_val_adj"), digits = 3 ) %>%
-                    formatRound(columns = c("avg_log2FC", "pct.1", "pct.2"), digits = 3)
-  
-  
-} else {
-  knitr::kable(top_rna_markers)
-}
-
-
-p <- DoHeatmap(seurat, features = unique(top_rna_markers$gene), raster = T) + NoLegend()
-
-
-hm_filename <- "cluster_markers_gene_activity_heatmap.jpeg"
-ggsave(p, filename = hm_filename, device = "jpeg", dpi = 300, units = "in")
-
-p
-
-
-
-```
-
-`r if(run_adt){"#### Protein Markers"}`
-```{r eval=run_adt, echo=run_adt & echo_set}
-DefaultAssay(seurat) <- 'ADT'
-
-adt_markers <- FindAllMarkers(seurat, only.pos = T, test.use = 'wilcox',
-                              logfc.threshold = 0.05,
-                              min.pct = 0.01) %>%
-                dplyr::filter(avg_log2FC > 1) %>%
-                dplyr::filter(p_val_adj < 0.01)
-
-top_adt_markers <- adt_markers %>%
-                  group_by(cluster) %>%
-                  slice_max(., order_by = avg_log2FC, n = 10) %>%
-                  ungroup()
-
-
-
-if(knitr::is_html_output()){
-  datatable(adt_markers,
-                        caption = "ADT Modality cluster markers",
-                        extensions = 'Buttons',
-                          options = list(dom = 'lfrtpB',
-                                         buttons = list(
-                                                      list(extend = 'csv', title = "ADT_cluster_markers"),
-                                                      list(extend = 'excel', title = "ADT_cluster_markers")),
-                                         lengthMenu = list(c(10,25,50,-1),
-                                                           c(10,25,50,"All")))) %>%
-                    formatSignif(columns = c("p_val", "p_val_adj"), digits = 3 ) %>%
-                    formatRound(columns = c("avg_log2FC", "pct.1", "pct.2"), digits = 3)
-  
-  
-} else {
-  knitr::kable(top_adt_markers)
-}
-
-
-p <- DoHeatmap(seurat, features = unique(top_adt_markers$gene), raster = T) + NoLegend()
-
-hm_filename <- "cluster_markers_adt_heatmap.jpeg"
-ggsave(p, filename = hm_filename, device = "jpeg", dpi = 300, units = "in")
-
-p
-
-
-```
-
-### Cluster frequencies
+### Cluster TF markers
 ```{r }
-if(params$outcomes == "none"){
-  cluster_df <- compute_ident_frequencies(seurat)
-  cluster_p <- cluster_frequency_plot(seurat)
-} else {
-  cluster_df <- compute_ident_frequencies(seurat, outcomes = params$outcomes)
-  cluster_p <- cluster_frequency_plot(seurat, split.by = params$outcomes)
-}
+tf_markers <- FindAllMarkers(
+  object = seurat,
+  only.pos = TRUE,
+  mean.fxn = rowMeans,
+  fc.name = "avg_diff"
+) 
+
+
+tf_df <- convert_chromvar_features(seurat, features = unique(tf_markers$gene)) %>%
+          dplyr::select(-id) %>%
+          dplyr::rename(gene = "feature_name")
+
+tf_markers <- tf_markers %>%
+              left_join(tf_df, by = c("gene" = "gene")) %>%
+              dplyr::rename(motif = "gene",
+                            transcription_factor = "name") %>%
+              dplyr::select(transcription_factor, everything())
+
+
+top_tf_markers <- tf_markers %>%
+                  group_by(cluster) %>%
+                  slice_max(., order_by = avg_diff, n = 10) %>%
+                  ungroup() 
+
 
 
 if(knitr::is_html_output()){
-  datatable(cluster_df,
-                        caption = "Cluster frequencies per sample",
+  datatable(tf_markers,
+                        caption = "TF activity cluster markers",
                         extensions = 'Buttons',
                           options = list(dom = 'lfrtpB',
                                          buttons = list(
-                                                      list(extend = 'csv', title = "cluster_frequencies_per_sample"),
-                                                      list(extend = 'excel', title = "cluster_frequencies_per_sample")),
+                                                      list(extend = 'csv', title = "chromvar_cluster_markers"),
+                                                      list(extend = 'excel', title = "chromvar_cluster_markers")),
                                          lengthMenu = list(c(10,25,50,-1),
                                                            c(10,25,50,"All")))) %>%
-                    formatRound(columns = c("relative_frequency"), digits = 3)
+                    formatSignif(columns = c("p_val", "p_val_adj"), digits = 3 ) %>%
+                    formatRound(columns = c("avg_diff", "pct.1", "pct.2"), digits = 3)
   
   
-} 
+} else {
+  knitr::kable(top_tf_markers)
+}
 
-cluster_p
+
+
+```
+
+### Cell type TF markers
+```{r }
+Idents(seurat) <- "cell_type"
+
+tf_markers_cell <- FindAllMarkers(
+  object = seurat,
+  only.pos = TRUE,
+  mean.fxn = rowMeans,
+  fc.name = "avg_diff"
+) 
+
+
+tf_df_cell <- convert_chromvar_features(seurat, features = unique(tf_markers_cell$gene)) %>%
+          dplyr::select(-id) %>%
+          dplyr::rename(gene = "feature_name")
+
+tf_markers_cell <- tf_markers_cell %>%
+              left_join(tf_df_cell, by = c("gene" = "gene")) %>%
+              dplyr::rename(motif = "gene",
+                            transcription_factor = "name") %>%
+              dplyr::select(transcription_factor, everything()) %>%
+              dplyr::rename(cell_type = "cluster")
+
+
+top_tf_markers_cell <- tf_markers_cell %>%
+                  group_by(cell_type) %>%
+                  slice_max(., order_by = avg_diff, n = 10) %>%
+                  ungroup() 
+
+
+
+if(knitr::is_html_output()){
+  datatable(tf_markers_cell,
+                        caption = "TF activity cell markers",
+                        extensions = 'Buttons',
+                          options = list(dom = 'lfrtpB',
+                                         buttons = list(
+                                                      list(extend = 'csv', title = "chromvar_cell_markers"),
+                                                      list(extend = 'excel', title = "chromvar_cell_markers")),
+                                         lengthMenu = list(c(10,25,50,-1),
+                                                           c(10,25,50,"All")))) %>%
+                    formatSignif(columns = c("p_val", "p_val_adj"), digits = 3 ) %>%
+                    formatRound(columns = c("avg_diff", "pct.1", "pct.2"), digits = 3)
+  
+  
+} else {
+  knitr::kable(top_tf_markers_cell)
+}
+
+Idents(seurat) <- "seurat_clusters"
+
+```
+
+```{r }
+
+DefaultAssay(seurat) <- "chromvar"
+p <- FeaturePlot(seurat, features = ConvertMotifID(seurat[['chromvar']], name = c("CREB1", "FOXP3")))
+
+p <- FeaturePlot(seurat, 
+                 features =  convert_chromvar_features(seurat, features = "POU2F2")$feature_name,
+                 min.cutoff = 'q10', 
+                 max.cutoff = 'q90',
+                 reduction = reduction_sel,
+                 cols = c("lightgrey", "darkgreen"),
+                 pt.size = 0.1)
+
+
 
 ```
 
 
+
 ```{r }
-saveRDS(seurat, file = "seurat_clustered.RDS")
+saveRDS(seurat, file = "seurat_chromvar.RDS")
 
 ```

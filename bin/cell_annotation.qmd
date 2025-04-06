@@ -164,14 +164,6 @@ seurat <- readRDS(params$seurat)
 ```
 
 
-`r if(params$pipeline == "atac"){"### Compute Gene Activity from peaks"}`
-```{r eval=atac_logical, echo=atac_logical & echo_set}
-DefaultAssay(seurat) <- "ATAC"
-
-seurat[['RNA']] <- GeneActivity(seurat, assay = 'ATAC')
-
-```
-
 
 ```{r echo=F}
 
@@ -185,11 +177,9 @@ annot_blurb <- paste("### Azimuth\nUsing [Azimuth](https://github.com/satijalab/
 DefaultAssay(seurat) <- "RNA"
 
 seurat <- Azimuth::RunAzimuth(seurat, reference = params$azimuth_reference, verbose = F)
-
-if(params$selected_method == 'azimuth'){
-  seurat$cell_type <- seurat$predicted.celltype.l2
-}
-
+seurat[["prediction.score.celltype.l1"]] <- NULL
+seurat[["prediction.score.celltype.l2"]] <- NULL
+seurat[["prediction.score.celltype.l3"]] <- NULL
 
 p1 <- DimPlot(seurat, 
               reduction = reduction_sel, 
@@ -212,7 +202,13 @@ p2 <- DimPlot(seurat,
 p2
 p1
 
- 
+dynamic_size <- function(data, base_width = 6) {
+  base_height <- 4
+  height <- base_height + nrow(data) * 0.1  # Example logic
+  return(list(width = base_width, height = height))
+}
+
+
 DotPlot_Plus(seurat, 
             features = params$markers_rna, 
             group.by = "predicted.celltype.l2", 
