@@ -52,10 +52,6 @@ process CREATE_SEURAT_ATAC {
     publishDir "$params.outdir/quarto", mode:'copy', pattern: "*.Rmd"
 
 
-
-    memory '16 GB'
-    cpus 2
-
     input:
     tuple val(sample), path(raw_matrix), path(filt_matrix), path(fragments_index), path(fragments), path(barcode_metrics)
     val pipeline
@@ -96,9 +92,6 @@ process CREATE_SEURAT {
 
     // publishDir "$params.outdir", mode:'copy', pattern: "*.html"
 
-
-    memory '8 GB'
-    cpus 1
 
     input:
     tuple val(sample), path(raw_matrix), path(filt_matrix)

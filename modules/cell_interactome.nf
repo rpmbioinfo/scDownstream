@@ -13,7 +13,11 @@ process CELL_INTERACTOME {
     path book_assets
     val pipeline
     val integrate_datasets
+    val outcomes
     val species
+    val cc_avg_method
+    val cc_pathways
+    
 
     output:
     path "*_freeze.zip", emit: quarto

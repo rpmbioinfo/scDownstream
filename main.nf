@@ -298,20 +298,22 @@ workflow {
         | set { cell_ann_ch }
 
         quarto_ch = quarto_ch.concat(cell_ann_ch.quarto)
+
+        if (params.pipeline in ["multiome", 'teaseq', 'atac'] & params.recall_peaks) {
+            CHROMVAR(cell_ann_ch.seurat,
+                params.chromvar_script,
+                book_assets,
+                params.pipeline,
+                params.integrate_datasets,
+                params.species)
+            | set { chromvar_ch }
+
+            quarto_ch = quarto_ch.concat(chromvar_ch.quarto)
+
+        }
     }
 
-    if (params.pipeline in ["multiome", 'teaseq', 'atac'] & params.recall_peaks) {
-        CHROMVAR(cell_ann_ch.seurat,
-            params.chromvar_script,
-            book_assets,
-            params.pipeline,
-            params.integrate_datasets,
-            params.species)
-        | set { chromvar_ch }
-
-        quarto_ch = quarto_ch.concat(chromvar_ch.quarto)
-
-    }
+    
 
     BOOK_RENDER(scripts_ch, 
                      book_assets,
